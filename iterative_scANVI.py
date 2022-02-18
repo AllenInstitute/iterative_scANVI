@@ -115,6 +115,7 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
         "n_top_genes": 2000,
         "n_downsample_ref": 1000,
         "n_ref_genes": 500,
+        "user_genes": None,
         "max_epochs_scVI": 200,
         "max_epochs_scANVI": 20,
         "min_accuracy": 0.85,
@@ -133,6 +134,7 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     n_top_genes = kwargs["n_top_genes"]
     n_downsample_ref = kwargs["n_downsample_ref"]
     n_ref_genes = kwargs["n_ref_genes"]
+    user_genes = kwargs["user_genes"]
     max_epochs_scVI = kwargs["max_epochs_scVI"]
     max_epochs_scANVI = kwargs["max_epochs_scANVI"]
     min_accuracy = kwargs["min_accuracy"]
@@ -170,7 +172,7 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     if all([i in adata_query.obs.columns for i in continuous_covariate_keys]) is False or all([i in adata_ref.obs.columns for i in continuous_covariate_keys]) is False:
         warnings.warn("One or more continuous covariates do not exist in both AnnData objects. This can be safely ignored if they are calculated later.")
                           
-    for i in [use_hvg, use_de, n_downsample_ref, n_ref_genes, max_epochs_scVI, max_epochs_scANVI]:
+    for i in [use_hvg, use_de, n_downsample_ref, n_ref_genes, user_genes, max_epochs_scVI, max_epochs_scANVI]:
         if isinstance(i, bool) or isinstance(i, str) or isinstance(i, int):
             i = [i]
         if len(i) != 1 and len(i) != len(labels_keys):
@@ -186,14 +188,15 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
             "use_de": use_de[i] if isinstance(use_de, list) else use_de,
             "n_top_genes": n_top_genes[i] if isinstance(n_top_genes, list) else n_top_genes,
             "n_downsample_ref": n_downsample_ref[i] if isinstance(n_downsample_ref, list) else n_downsample_ref,
-            "n_ref_genes": n_ref_genes[i] if isinstance(n_ref_genes, list) else n_ref_genes
+            "n_ref_genes": n_ref_genes[i] if isinstance(n_ref_genes, list) else n_ref_genes,
+            "user_genes": user_genes[i] if isinstance(user_genes, list) else None
         }
         run_scVI_kwargs = {
             "layer": layer,
             "max_epochs_scVI": max_epochs_scVI[i] if isinstance(max_epochs_scVI, list) else max_epochs_scVI,
             "categorical_covariate_keys": categorical_covariate_keys,
             "continuous_covariate_keys": continuous_covariate_keys,
-            "model_args": scVI_model_args
+            "scVI_model_args": scVI_model_args
         }
         run_scANVI_kwargs = {
             "layer": layer,
@@ -201,7 +204,7 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
             "categorical_covariate_keys": categorical_covariate_keys,
             "continuous_covariate_keys": continuous_covariate_keys,
             "labels_key": j,
-            "model_args": scANVI_model_args
+            "scANVI_model_args": scANVI_model_args
         }
                 
         adata_ref.obs[j] = adata_ref.obs[j].astype("category")
@@ -218,7 +221,10 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
 
             
             if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) is False:
-                markers = get_model_genes(adata_ref, **get_model_genes_kwargs)
+                if user_genes is None:
+                    markers = get_model_genes(adata_ref, **get_model_genes_kwargs)
+                else:
+                    markers = user_genes[i]
                 model = run_scVI(adata[:, markers], **run_scVI_kwargs)
                 model.save(os.path.join(output_dir, "scVI_models", model_name))
 
@@ -293,7 +299,15 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 
                 if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) is False:
                     cells = adata_ref.obs[labels_keys[i - 1]] == k
-                    markers = get_model_genes(adata_ref[cells], **get_model_genes_kwargs)
+                    
+                    if user_genes is None:
+                        markers = get_model_genes(adata_ref[cells], **get_model_genes_kwargs)
+                    else:
+                        if isinstance(user_gene[i], dict):
+                            markers = user_genes[i][k]
+                        else:
+                            markers = user_genes[i]
+                        
                     cells = adata.obs[labels_keys[i - 1] + "_scANVI"] == k
                     if any(cells) is False:
                         continue
@@ -409,6 +423,7 @@ def get_model_genes(adata_ref, **kwargs):
     n_top_genes = kwargs["n_top_genes"]
     n_downsample_ref = kwargs["n_downsample_ref"]
     n_ref_genes = kwargs["n_ref_genes"]
+    user_genes = kwargs["user_genes"]
     
     markers = []
     
@@ -486,7 +501,7 @@ def run_scVI(adata, **kwargs):
     max_epochs_scVI = kwargs["max_epochs_scVI"]
     categorical_covariate_keys = kwargs["categorical_covariate_keys"]
     continuous_covariate_keys = kwargs["continuous_covariate_keys"]
-    scVI_model_args=kwargs["scVI_model_args"]
+    scVI_model_args = kwargs["scVI_model_args"]
         
     adata = adata.copy()
         
@@ -530,7 +545,7 @@ def run_scANVI(adata, model, **kwargs):
     categorical_covariate_keys = kwargs["categorical_covariate_keys"]
     continuous_covariate_keys = kwargs["continuous_covariate_keys"]
     labels_key = kwargs["labels_key"]
-    scANVI_model_args=kwargs["scANVI_model_args"]
+    scANVI_model_args = kwargs["scANVI_model_args"]
         
     adata = adata.copy()
     
