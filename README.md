@@ -11,7 +11,33 @@ Place iterative_scANVI.py in your working directory
 
 Example usage:
 ```
+import os
+import numpy as np
+import anndata
+import re
+import pandas as pd
+import matplotlib.pyplot as plt
+%matplotlib inline
+import csv
+import scanpy as sc
+import json
+import hashlib
+import scvi
+import seaborn as sns
+import copy
+import random
+import scipy as sp
 from iterative_scANVI import *
+from joblib import parallel_backend
+from datetime import datetime
+from joblib import Parallel, delayed
+from igraph import *
+import warnings
+
+sc.settings.n_jobs = 32
+warnings.filterwarnings("ignore")
+
+pwd = os.getcwd()
 
 adata_ref = sc.read_h5ad("reference_adata.h5ad")
 adata_query = sc.read_h5ad("query_adata.h5ad")
