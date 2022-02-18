@@ -62,9 +62,9 @@ output_dir: (str) Location to store trained models and final results CSV
     
     plot_confusion: (bool, default True) Whether to plot the confusion matrix after scANVI label prediction
     
-    scVI_model_args: (None or dict, default {"n_layer": 2}) kwargs passed to scvi.model.SCVI
+    scVI_model_args: (dict, default {"n_layer": 2}) kwargs passed to scvi.model.SCVI
     
-    scANVI_model_args: (None or dict, default None) kwargs passed to scvi.model.SCANVI.from_scvi_model
+    scANVI_model_args: (dict, default {}) kwargs passed to scvi.model.SCANVI.from_scvi_model
 
 Outputs:
 scVI models in output_dir/scVI_models
@@ -121,7 +121,7 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
         "min_accuracy": 0.85,
         "plot_confusion": True,
         "scVI_model_args": {"n_layers": 2},
-        "scANVI_model_args": None,
+        "scANVI_model_args": {},
     }
     
     kwargs = {**default_kwargs, **kwargs}
