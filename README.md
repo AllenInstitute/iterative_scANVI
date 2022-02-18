@@ -2,7 +2,7 @@
 
 Requirements:
 
-Install scanpy and scvi-tools
+Install scanpy and scvi-tools (recommend this be done inside a clean conda environment)
 ```
 pip install scanpy[leiden]
 pip install scvi-tools
