@@ -10,7 +10,10 @@ pip install scvi-tools
 Place iterative_scANVI.py in your working directory (detailed function usage in file)
 
 Example usage:
-``
+
+```
+from iterative_scANVI import *
+
 adata_ref = sc.read_h5ad("reference_adata.h5ad")
 adata_query = sc.read_h5ad("query_adata.h5ad")
 
