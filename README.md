@@ -7,7 +7,7 @@ Install scanpy and scvi-tools (recommend this be done inside a clean conda envir
 pip install scanpy[leiden]
 pip install scvi-tools
 ```
-Place iterative_scANVI.py in your working directory
+Place iterative_scANVI.py in your working directory (detailed function usage in file)
 
 Example usage:
 ```
