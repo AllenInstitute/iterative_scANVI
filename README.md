@@ -50,7 +50,7 @@ iterative_scANVI_kwargs = {
 iterative_scANVI(
     adata_query, 
     adata_ref,
-    labels_keys=["class", "subclass", "cluster"]
+    labels_keys=["class", "subclass", "cluster"],
     output_dir=os.path.join("scANVI_output"), 
     **iterative_scANVI_kwargs
 )
