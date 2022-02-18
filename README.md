@@ -42,8 +42,8 @@ adata_ref = sc.read_h5ad("reference_adata.h5ad")
 adata_query = sc.read_h5ad("query_adata.h5ad")
 
 iterative_scANVI_kwargs = {
-    "categorical_covariate_keys": ["donor_name"]
-    "continuous_covariate_keys": ["n_genes"]
+    "categorical_covariate_keys": ["donor_name"],
+    "continuous_covariate_keys": ["n_genes"],
     "n_top_genes": [5000, 2000, 2000]
 }
 
