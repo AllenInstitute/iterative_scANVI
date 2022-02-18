@@ -34,7 +34,6 @@ from joblib import Parallel, delayed
 from igraph import *
 import warnings
 
-sc.settings.n_jobs = 32
 warnings.filterwarnings("ignore")
 
 pwd = os.getcwd()
