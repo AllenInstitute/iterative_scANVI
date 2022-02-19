@@ -303,7 +303,7 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                     if user_genes is None:
                         markers = get_model_genes(adata_ref[cells], **get_model_genes_kwargs)
                     else:
-                        if isinstance(user_gene[i], dict):
+                        if isinstance(user_genes[i], dict):
                             markers = user_genes[i][k]
                         else:
                             markers = user_genes[i]
