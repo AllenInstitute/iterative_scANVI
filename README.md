@@ -6,7 +6,9 @@ Install scanpy and scvi-tools (recommend this be done inside a clean conda envir
 ```
 pip install scanpy[leiden]
 pip install scvi-tools
+conda install -c pytorch pytorch=1.10.0=py3.9_cuda11.3_cudnn8.2.0_0
 ```
+
 Place iterative_scANVI.py in your working directory (detailed function usage in file)
 
 Example usage:
