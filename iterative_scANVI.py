@@ -173,7 +173,7 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
         warnings.warn("One or more continuous covariates do not exist in both AnnData objects. This can be safely ignored if they are calculated later.")
                           
     for i in [use_hvg, use_de, n_downsample_ref, n_ref_genes, user_genes, max_epochs_scVI, max_epochs_scANVI]:
-        if isinstance(i, bool) or isinstance(i, str) or isinstance(i, int):
+        if isinstance(i, bool) or isinstance(i, str) or isinstance(i, int) or i is None:
             i = [i]
         if len(i) != 1 and len(i) != len(labels_keys):
             raise ValueError(str(i) + " should be either a single value used in each iteration or a list of values of equal length to labels_keys.")
