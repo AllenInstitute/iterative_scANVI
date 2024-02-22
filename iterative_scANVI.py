@@ -9,11 +9,14 @@ import scanpy as sc
 import json
 import hashlib
 import scvi
+import glob
 import seaborn as sns
 import copy
 import random
 import scipy.sparse as sp_sparse
 import scipy.stats as sp_stats
+import transcriptomic_clustering as tc
+from iterative_scANVI import *
 from datetime import datetime
 from joblib import parallel_backend
 from joblib import Parallel, delayed
@@ -36,7 +39,7 @@ output_dir: (str) Location to store trained models and final results CSV
 
 **kwargs: (dict) Passed to several functions, details below:
 
-    layer: (None or str, default "UMIs") None if unnormalized counts are in AnnData.X, else a str where they are stored in AnnData.layers
+    layer: (None or str, default None) None if unnormalized counts are in AnnData.X, else a str where they are stored in AnnData.layers
     
     batch_key: (None or str, default None) Name of the batch variable pass to scVI and scANVI (e.g. "donor_name")
     
@@ -111,8 +114,8 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     default_kwargs = {
         "layer": "UMIs",
         "batch_key": None,
-        "categorical_covariate_keys": [],
-        "continuous_covariate_keys": [],
+        "categorical_covariate_keys": None,
+        "continuous_covariate_keys": None,
         "use_hvg": True,
         "use_de": True,
         "n_top_genes": 2000,
@@ -148,7 +151,7 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     
     if isinstance(adata_query, anndata.AnnData) is False or isinstance(adata_ref, anndata.AnnData) is False:
         raise TypeError("One or more of the AnnData objects have an incorrect type,")
-        
+
     if adata_query.shape[1] != adata_ref.shape[1]:
         common_labels = np.intersect1d(adata_query.var_names, adata_ref.var_names)
         adata_ref = adata_ref[:, common_labels].copy()
@@ -169,16 +172,21 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     
     else:
         raise ValueError("You must provide a layer key that contains raw UMIs or counts. AnnData.X is assumed to be log-normalized expression data.")
-        
+    
     if batch_key is not None:
         if batch_key not in adata_query.obs.columns or batch_key not in adata_ref.obs.columns:
             raise KeyError("Batch key is not in both AnnData objects.")
-            
-    if all([i in adata_query.obs.columns for i in categorical_covariate_keys]) is False or all([i in adata_ref.obs.columns for i in categorical_covariate_keys]) is False:
-        raise KeyError("One or more categorical covariates do not exist in both AnnData objects.")
-        
-    if all([i in adata_query.obs.columns for i in continuous_covariate_keys]) is False or all([i in adata_ref.obs.columns for i in continuous_covariate_keys]) is False:
-        warnings.warn("One or more continuous covariates do not exist in both AnnData objects. This can be safely ignored if they are calculated later.")
+    try:
+        if all([i in adata_query.obs.columns for i in categorical_covariate_keys]) is False or all([i in adata_ref.obs.columns for i in categorical_covariate_keys]) is False:
+            raise KeyError("One or more categorical covariates do not exist in both AnnData objects.")
+    except:
+        pass
+    
+    try:    
+        if all([i in adata_query.obs.columns for i in continuous_covariate_keys]) is False or all([i in adata_ref.obs.columns for i in continuous_covariate_keys]) is False:
+            warnings.warn("One or more continuous covariates do not exist in both AnnData objects. This can be safely ignored if they are calculated later.")
+    except:
+        pass
                           
     for i in [use_hvg, use_de, n_downsample_ref, n_ref_genes, user_genes, max_epochs_scVI, max_epochs_scANVI]:
         if isinstance(i, bool) or isinstance(i, str) or isinstance(i, int) or i is None:
@@ -188,6 +196,7 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                
     adata = adata_query.concatenate(adata_ref, index_unique=None)
     del adata_query
+    
     
     for i,j in enumerate(labels_keys):
         get_model_genes_kwargs = {
@@ -229,28 +238,28 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
             model_name = hashlib.md5(str(json.dumps({**get_model_genes_kwargs, **run_scVI_kwargs})).replace("/", " ").encode()).hexdigest()
             label_model_name = hashlib.md5(str(json.dumps({**get_model_genes_kwargs, **run_scANVI_kwargs})).replace("/", " ").encode()).hexdigest()
 
-            
-            if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) is False:
-                if user_genes is None:
-                    markers = get_model_genes(adata_ref, **get_model_genes_kwargs)
-                else:
-                    markers = user_genes[i]
-                model = run_scVI(adata[:, markers], **run_scVI_kwargs)
-                model.save(os.path.join(output_dir, "scVI_models", model_name))
-
-            else:
-                markers = pd.read_csv(os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"), header=None)
-                markers = markers[0].to_list()
-                model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[:, markers])
-                
             if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) is False:
+                
+                if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) is False:
+                    if user_genes is None:
+                        markers = get_model_genes(adata_ref, **get_model_genes_kwargs)
+                    else:
+                        markers = user_genes[i]
+                    model = run_scVI(adata[:, markers], **run_scVI_kwargs)
+                    model.save(os.path.join(output_dir, "scVI_models", model_name))
+
+                else:
+                    markers = pd.read_csv(os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"), header=None)
+                    markers = markers[0].to_list()
+                    model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[:, markers])
+                
                 label_model, probabilities = run_scANVI(adata[:, markers], model=model, **run_scANVI_kwargs)            
                 label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
                 probabilities.to_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"))
                     
             else:
                 probabilities = pd.read_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"), index_col=0)
-        
+            probabilities.index = [str(l) for l in probabilities.index]
             probabilities.dropna(axis=1, how='all', inplace=True)
             probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1, inplace=True)
             tmp = pd.merge(adata.obs, probabilities, how="left", left_index=True, right_index=True)
@@ -264,10 +273,10 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
             adata.obs = tmp.copy()
 
             conf_mat = adata.obs.groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
-            
+
             if plot_confusion is True:
                 display(conf_mat)
-                
+
             conf_mat = conf_mat.div(conf_mat.sum(axis=1), axis=0)
             conf_mat[conf_mat.isna()] = 0
             conf_mat = conf_mat.reindex(sorted(conf_mat.columns), axis=1)
@@ -300,47 +309,47 @@ def iterative_scANVI(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 model_name = hashlib.md5(str(json.dumps({**{labels_keys[i - 1]: k}, **get_model_genes_kwargs, **run_scVI_kwargs})).replace("/", " ").encode()).hexdigest()
                 label_model_name = hashlib.md5(str(json.dumps({**{labels_keys[i - 1]: k}, **get_model_genes_kwargs, **run_scANVI_kwargs})).replace("/", " ").encode()).hexdigest()
                 
-                if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) is False:
-                    cells = adata_ref.obs[labels_keys[i - 1]] == k
+                cells = adata.obs[labels_keys[i - 1] + "_scANVI"] == k
+                if any(cells) is False:
+                    continue
                     
-                    if user_genes is None:
-                        markers = get_model_genes(adata_ref[cells], **get_model_genes_kwargs)
-                    else:
-                        if isinstance(user_genes[i], dict):
-                            markers = user_genes[i][k]
-                        else:
-                            markers = user_genes[i]
-                        
-                    cells = adata.obs[labels_keys[i - 1] + "_scANVI"] == k
-                    if any(cells) is False:
-                        continue
-                    adata.obs[labels_keys[i - 1]] = adata.obs[labels_keys[i - 1]].astype("object")
-                    adata.obs[labels_keys[i - 1] + "_scANVI"] = adata.obs[labels_keys[i - 1] + "_scANVI"].astype("object")
-                    adata.obs.loc[(adata.obs[labels_keys[i - 1]] != adata.obs[labels_keys[i - 1] + "_scANVI"]) & (cells), j] = "Unknown"
-                    adata.obs[labels_keys[i - 1]] = adata.obs[labels_keys[i - 1]].astype("category")
-                    adata.obs[labels_keys[i - 1] + "_scANVI"] = adata.obs[labels_keys[i - 1] + "_scANVI"].astype("category")
-                    model = run_scVI(adata[cells, markers], **run_scVI_kwargs)
-                    model.save(os.path.join(output_dir, "scVI_models", model_name))
-
-                else:
-                    markers = pd.read_csv(os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"), header=None)
-                    markers = markers[0].to_list()
-                    cells = adata.obs[labels_keys[i - 1] + "_scANVI"] == k
-                    adata.obs[labels_keys[i - 1]] = adata.obs[labels_keys[i - 1]].astype("object")
-                    adata.obs[labels_keys[i - 1] + "_scANVI"] = adata.obs[labels_keys[i - 1] + "_scANVI"].astype("object")
-                    adata.obs.loc[(adata.obs[labels_keys[i - 1]] != adata.obs[labels_keys[i - 1] + "_scANVI"]) & (cells), j] = "Unknown"
-                    adata.obs[labels_keys[i - 1]] = adata.obs[labels_keys[i - 1]].astype("category")
-                    adata.obs[labels_keys[i - 1] + "_scANVI"] = adata.obs[labels_keys[i - 1] + "_scANVI"].astype("category")
-                    model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[cells, markers])
-                    
+                adata.obs[labels_keys[i - 1]] = adata.obs[labels_keys[i - 1]].astype("object")
+                adata.obs[labels_keys[i - 1] + "_scANVI"] = adata.obs[labels_keys[i - 1] + "_scANVI"].astype("object")
+                adata.obs.loc[(adata.obs[labels_keys[i - 1]] != adata.obs[labels_keys[i - 1] + "_scANVI"]) & (cells), j] = "Unknown"
+                adata.obs[labels_keys[i - 1]] = adata.obs[labels_keys[i - 1]].astype("category")
+                adata.obs[labels_keys[i - 1] + "_scANVI"] = adata.obs[labels_keys[i - 1] + "_scANVI"].astype("category")
+                
                 if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) is False:
-                    label_model, probabilities = run_scANVI(adata[cells, markers], model=model, **run_scANVI_kwargs)
-                    label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
-                    probabilities.to_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"))
+
+                    if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) is False:
+                        ref_cells = adata_ref.obs[labels_keys[i - 1]] == k
+
+                        if user_genes is None:
+                            markers = get_model_genes(adata_ref[ref_cells], **get_model_genes_kwargs)
+                        else:
+                            if isinstance(user_genes[i], dict):
+                                markers = user_genes[i][k]
+                            else:
+                                markers = user_genes[i]
+
+                        model = run_scVI(adata[cells, markers], **run_scVI_kwargs)
+                        model.save(os.path.join(output_dir, "scVI_models", model_name))
+
+                    else:
+                        markers = pd.read_csv(os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"), header=None)
+                        markers = markers[0].to_list()
+                        model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[cells, markers])
+                    
+                    try:
+                        label_model, probabilities = run_scANVI(adata[cells, markers], model=model, **run_scANVI_kwargs)
+                        label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
+                        probabilities.to_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"))
+                    except IndexError:
+                        continue
 
                 else:
                     probabilities = pd.read_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"), index_col=0)
-                    
+                probabilities.index = [str(l) for l in probabilities.index]
                 probabilities.dropna(axis=1, how='all', inplace=True)
                 probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1, inplace=True)
                 tmp = pd.merge(adata.obs, probabilities, how="left", left_index=True, right_index=True)
@@ -515,7 +524,7 @@ def run_scVI(adata, **kwargs):
         continuous_covariate_keys=continuous_covariate_keys
     )
     model = scvi.model.SCVI(adata, **scVI_model_args)
-    model.train(max_epochs=max_epochs_scVI)
+    model.train(max_epochs=max_epochs_scVI, early_stopping=True)
     
     return model
 
@@ -562,7 +571,7 @@ def run_scANVI(adata, model, **kwargs):
         labels_key=labels_key
     )
     label_model = scvi.model.SCANVI.from_scvi_model(model, "Unknown", adata=adata, **scANVI_model_args)
-    label_model.train(max_epochs=max_epochs_scANVI)
+    label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True)
     
     adata.obs[labels_key + "_scANVI"] = label_model.predict()
     adata.obs[labels_key + "_scANVI"] = adata.obs[labels_key + "_scANVI"].astype("category")
@@ -640,12 +649,12 @@ save_anndata(
 )
 '''
 
-def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, model_args={}, **kwargs):
+def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, diagnostic_plots=None, model_args={}, **kwargs):
         
     default_kwargs = {
         "n_cores": 1,
         "normalize_data": False,
-        "calculate_umap": True
+        "calculate_umap": True,
     }
     
     kwargs = {**default_kwargs, **kwargs}
@@ -655,7 +664,7 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, m
     calculate_umap = kwargs["calculate_umap"]
     
     results_file = "iterative_scANVI_results." + date + ".csv"
-
+    
     if isinstance(adata_query, anndata.AnnData) is False or isinstance(adata_ref, anndata.AnnData) is False:
         raise TypeError("One or more of the AnnData objects have an incorrect type,")
         
@@ -664,7 +673,7 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, m
         adata_ref = adata_ref[:, common_labels].copy()
         adata_query = adata_query[:, common_labels].copy()
         print("WARNING: Reference and query AnnData objects have different shapes, using " + str(len(common_labels)) + " common labels. This may have a deterimental effect on model performance.")
-        
+    
     if split_key is not None:
         if split_key in adata_ref.obs.columns is False or split_key in adata_query.obs.columns is False:
             raise KeyError("One or more labels_keys do not exist in the reference AnnData object.")
@@ -677,6 +686,7 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, m
     
     try:
         scANVI_results = pd.read_csv(os.path.join(output_dir, results_file), index_col=0)
+        scANVI_results.index = [str(l) for l in scANVI_results.index]
 
         if scANVI_results.shape[0] != adata.shape[0]:
             common_cells = np.intersect1d(adata.obs_names, scANVI_results.index)
@@ -699,22 +709,29 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, m
         
     for j in adata.obs.columns:
         if adata.obs[j].dtype == bool:
+            print("Correcting bool for " + j)
             adata.obs[j] = adata.obs[j].astype("object")
             adata.obs[j] = adata.obs[j].replace({True: "True", False: "False"})
 
     for i in adata.obs.columns[adata.obs.isna().sum(axis=0) > 0]:
         if any(adata.obs[i].notna()) is False:
+            print("Dropping no-value column " + i)
             adata.obs.drop([i], axis=1, inplace=True)
                 
         else:            
             replace_with = ""
-            if isinstance(adata.obs.loc[adata.obs[i].notna(), i][0], np.float64) is True:
-                replace_with = 0
+            
+            if isinstance(adata.obs.loc[adata.obs[i].notna(), i][0], np.float64) is True or isinstance(adata.obs.loc[adata.obs[i].notna(), i][0], np.float32) is True:
+                replace_with = 0.0
 
             if isinstance(adata.obs[i].dtype, pd.core.dtypes.dtypes.CategoricalDtype) is True:
                 adata.obs[i] = adata.obs[i].astype("object")
-                
+            
+            print("Replacing NaNs with " + str(replace_with) + " for " + i + " with dtype " + str(type(adata.obs.loc[adata.obs[i].notna(), i][0])))
             adata.obs.loc[adata.obs[i].isna(), i] = replace_with
+            
+            if isinstance(adata.obs.loc[(adata.obs[i].notna()) & (adata.obs[i] != ""), i][0], bool) is True:
+                adata.obs[i] = [str(l) for l in adata.obs[i]]
             
     if split_key != None:
             
@@ -742,7 +759,7 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, m
         else:
             cells = adata.obs_names
             sub = adata
-        
+                    
         with parallel_backend('threading', n_jobs=n_cores):
             if normalize_data is True:
                 sc.pp.normalize_total(sub, 1e4)
@@ -758,11 +775,17 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, m
                 else:
                     markers = pd.read_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "var_names.csv"), header=None)
                     markers = markers[0].to_list()
-                    
                     sub_markers_only = sub[:, markers].copy()
-                    sub_markers_only.obs[groupby] = sub_markers_only.obs[groupby].astype("object")
-                    sub_markers_only.obs.loc[sub_markers_only.obs[groupby] == "", groupby] = "Unknown"
-                    sub_markers_only.obs[groupby] = sub_markers_only.obs[groupby].astype("category")
+                    
+                    try:
+                        sub_markers_only.obs[groupby] = sub_markers_only.obs[groupby].astype("object")
+                        sub_markers_only.obs[split_key] = sub_markers_only.obs[split_key].astype("object")
+                        sub_markers_only.obs[split_key.replace("_scANVI", "")] = sub_markers_only.obs[split_key.replace("_scANVI", "")].astype("object")
+                        sub_markers_only.obs.loc[(sub_markers_only.obs[split_key.replace("_scANVI", "")] != sub_markers_only.obs[split_key]), groupby] = "Unknown"
+                        sub_markers_only.obs.loc[sub_markers_only.obs[groupby] == "", groupby] = "Unknown"
+                        sub_markers_only.obs[groupby] = sub_markers_only.obs[groupby].astype("category")
+                    except KeyError:
+                        pass
                     
                     scvi.model.SCANVI.setup_anndata(
                         sub_markers_only,
@@ -777,8 +800,8 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, m
                     sub.obsm["X_scVI"] = label_model.get_latent_representation()
                     sc.pp.neighbors(sub, use_rep="X_scVI")
                     sc.tl.umap(sub)
-                
-            sub.write(os.path.join(output_dir, "objects", i.replace("/", " ") + "_scANVI." + date + ".h5ad"))
+            
+        sub.write(os.path.join(output_dir, "objects", i.replace("/", " ") + "_scANVI." + date + ".h5ad"))
 
 '''
 Gets the scVI and scANVI model name based on args passed.
@@ -793,7 +816,7 @@ groupby: (str) Label predicted within the split_key (e.g. cluster if split_key i
 
 **kwargs: (dict) Passed to construct model_name and label_model_name
 
-    layer: (None or str, default "UMIs") None if unnormalized counts are in AnnData.X, else a str where they are stored in AnnData.layers
+    layer: (None or str, default None) None if unnormalized counts are in AnnData.X, else a str where they are stored in AnnData.layers
     
     categorical_covariate_keys: (list) List of categorical covariates to pass to scVI and scANVI (e.g. ["donor_name"])
     
@@ -828,8 +851,9 @@ def get_model_names(split_key, split_value, groupby, **kwargs):
     
     default_kwargs = {
         "layer": "UMIs",
-        "categorical_covariate_keys": ["donor_name"],
-        "continuous_covariate_keys": ["n_genes"],
+        "batch_key": None,
+        "categorical_covariate_keys": None,
+        "continuous_covariate_keys": None,
         "use_hvg": True,
         "use_de": True,
         "n_top_genes": 2000,
@@ -857,6 +881,7 @@ def get_model_names(split_key, split_value, groupby, **kwargs):
     max_epochs_scANVI = kwargs["max_epochs_scANVI"]
     scVI_model_args = kwargs["scVI_model_args"]
     scANVI_model_args = kwargs["scANVI_model_args"]
+    user_genes = kwargs["user_genes"]
     
     get_model_genes_kwargs = {
         "groupby": groupby,
@@ -873,7 +898,7 @@ def get_model_names(split_key, split_value, groupby, **kwargs):
         "batch_key": batch_key,
         "categorical_covariate_keys": categorical_covariate_keys,
         "continuous_covariate_keys": continuous_covariate_keys,
-        "scVI_model_args": scVI_model_args
+        "scVI_model_args": scVI_model_args,
     }
     run_scANVI_kwargs = {
         "layer": layer,
@@ -882,7 +907,7 @@ def get_model_names(split_key, split_value, groupby, **kwargs):
         "categorical_covariate_keys": categorical_covariate_keys,
         "continuous_covariate_keys": continuous_covariate_keys,
         "labels_key": groupby,
-        "scANVI_model_args": scANVI_model_args
+        "scANVI_model_args": scANVI_model_args,
     }
     
     if split_key == None:
