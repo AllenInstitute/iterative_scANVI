@@ -5,7 +5,7 @@ Requirements:
 Install scanpy and scvi-tools (recommend this be done inside a clean conda environment)
 ```
 pip install scanpy[leiden]
-pip install scvi-tools
+pip install scvi-tools==0.14.3
 conda install -c pytorch pytorch=1.10.0=py3.9_cuda11.3_cudnn8.2.0_0
 ```
 
