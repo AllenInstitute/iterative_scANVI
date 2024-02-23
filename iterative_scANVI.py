@@ -15,7 +15,6 @@ import copy
 import random
 import scipy.sparse as sp_sparse
 import scipy.stats as sp_stats
-import transcriptomic_clustering as tc
 from iterative_scANVI import *
 from datetime import datetime
 from joblib import parallel_backend
