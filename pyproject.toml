@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "iterative_scANVI"
+version = "0.0.1"
+authors = [
+  { name="Kyle J. Travaglini", emai="kyle.travaglini@alleninstitute.org" },
+]
+description = "A wrapper for mapping single cell RNAseq data to a reference taxonomy using scVI and scANVI iteratively"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "scvi-tools>=1.0.0",
+    "rapids_singlecell>=0.10.0",
+    "scanpy>=1.9",
+    "anndata>=0.10",
+    "matplotlib",
+    "seaborn",
+    "scipy",
+    "numpy",
+    "scipy"
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Homepage = "https://github.com/AllenInstitute/iterative_scANVI"
+Issues = "https://github.com/AllenInstitute/iterative_scANVI/issues"
+
