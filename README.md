@@ -1,20 +1,14 @@
 # iterative_scANVI
 
-Requirements:
-
-Install scanpy and scvi-tools (recommend this be done inside a clean conda environment)
+Install:
 ```
-pip install scanpy[leiden]
-pip install scvi-tools==0.14.3
-conda install -c pytorch pytorch=1.10.0=py3.9_cuda11.3_cudnn8.2.0_0
+pip install git+ssh://git@github.com/AllenInstitute/iterative_scANVI.git
 ```
-
-Place iterative_scANVI.py in your working directory (detailed function usage in file)
 
 Example usage:
 
 ```
-from iterative_scANVI import *
+from iterative_scANVI import mapping as isc_mapping
 
 adata_ref = sc.read_h5ad("reference_adata.h5ad")
 adata_query = sc.read_h5ad("query_adata.h5ad")
@@ -25,7 +19,7 @@ iterative_scANVI_kwargs = {
     "n_top_genes": [5000, 2000, 2000]
 }
 
-iterative_scANVI(
+isc_mapping.iteratively_map(
     adata_query, 
     adata_ref,
     labels_keys=["class", "subclass", "cluster"],
