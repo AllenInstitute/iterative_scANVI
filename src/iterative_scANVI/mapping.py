@@ -5,13 +5,13 @@ import hashlib
 import glob
 import copy
 import random
-import anndata
 import scvi
-import torch
 import numpy as np
 import pandas as pd
-import scanpy as sc
 import seaborn as sns
+import scanpy as sc
+import anndata as ad
+import rapids_singlecell as rsc
 from datetime import datetime
 from scipy import sparse as sp_sparse
 from scipy import stats as sp_stats
@@ -21,10 +21,6 @@ from joblib import Parallel, delayed
 import warnings
 
 warnings.filterwarnings("ignore")
-use_cuda = torch.cuda.is_available()
-
-if use_cuda == True:
-    import rapids_singlecell as rsc
 
 '''
 Integrates and predicts labels for a query dataset iteratively using scVI and scANVI (Xu et al 2021 Mol Syst Biol)
@@ -52,7 +48,7 @@ output_dir: (str) Location to store trained models and final results CSV
     
     use_de: (bool, default True) Whether to calculate and include differentially genes from the reference dataset to scVI and scANVI
     
-    n_top_genes: (int or list, default 2000) Number of highly variable genes to pass in each iteration. Not used if use_hvg is False
+    n_top_genes: (int or list, default 2000) Number of highly variable genes to pass in each iteration. Not used if use_hvg == False
     
     n_downsample_ref: (int or list, default 1000) Number of cells to downsample reference groups too in each iteration when 
     calculcating differentially expressed genes
@@ -60,6 +56,8 @@ output_dir: (str) Location to store trained models and final results CSV
     n_ref_genes: (int or list, default 500): Number of differentially expressed genes per group to pass in each iteration from the 
     reference dataset to scVI and scANVI
     
+    user_genes: (list, default None): List of either lists (to use the same genes across all types within a taxonomy level) or dicts (to specify difference gene lists within each type in a taxonomy level) of user defined genes to use with the model
+
     max_epochs_scVI: (int or list, default 200) Number of epochs to train scVI for in each iteration
     
     max_epochs_scANVI: (int or list, default 20) Number of epochs to train scANVI for in each iteration 
@@ -68,6 +66,10 @@ output_dir: (str) Location to store trained models and final results CSV
     
     plot_confusion: (bool, default True) Whether to plot the confusion matrix after scANVI label prediction
     
+    plot_latent_space: (bool, default False) Whether to plot the variables used in the model on a UMAP representation of the latent space
+
+    save_latent_space: (bool, default False) Whether to save the latent space as an numpy matrix in the model folder
+
     scVI_model_args: (dict, default {"n_layer": 2}) kwargs passed to scvi.model.SCVI
     
     scANVI_model_args: (dict, default {}) kwargs passed to scvi.model.SCANVI.from_scvi_model
@@ -89,9 +91,7 @@ CSV named "iterative_scANVI_results.<date>.csv" in output_dir with cells as rows
     <Label>_conf_scANVI: (float) Probability of the prediction
     
     <All Possible Label Values>: (float) Probability a cell is that label (e.g. glia, excitatory, inhibitory or Astro, Endo, VLMC, etc)
-    
-    cleanup: ("Unknown" or "Reference" or "Accuracy" or "Confidence") Column indicated whether a cell was flagged as reference, 
-    having a label with a low prediction accuracy, or having a confidence signficantly different from others in its group
+
     
 Example Usage:
 iterative_scANVI_kwargs = {
@@ -113,7 +113,7 @@ iteratively_map(
 def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     
     default_kwargs = {
-        "layer": "UMIs",
+        "layer": None,
         "batch_key": None,
         "categorical_covariate_keys": None,
         "continuous_covariate_keys": None,
@@ -121,14 +121,17 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
         "use_de": True,
         "n_top_genes": 2000,
         "n_downsample_ref": 1000,
+        "min_ref_cells": 15,
         "n_ref_genes": 500,
         "user_genes": None,
         "max_epochs_scVI": 200,
         "max_epochs_scANVI": 20,
         "min_accuracy": 0.85,
         "plot_confusion": True,
+        "plot_latent_space": False,
+        "save_latent_space": False,
         "scVI_model_args": {"n_layers": 2},
-        "scANVI_model_args": {},
+        "scANVI_model_args": {"n_layers": 2},
     }
     
     kwargs = {**default_kwargs, **kwargs}
@@ -140,6 +143,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     use_hvg = kwargs["use_hvg"]
     use_de = kwargs["use_de"]
     n_top_genes = kwargs["n_top_genes"]
+    min_ref_cells = kwargs["min_ref_cells"]
     n_downsample_ref = kwargs["n_downsample_ref"]
     n_ref_genes = kwargs["n_ref_genes"]
     user_genes = kwargs["user_genes"]
@@ -147,65 +151,135 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     max_epochs_scANVI = kwargs["max_epochs_scANVI"]
     min_accuracy = kwargs["min_accuracy"]
     plot_confusion = kwargs["plot_confusion"]
+    plot_latent_space = kwargs["plot_latent_space"]
+    save_latent_space = kwargs["save_latent_space"]
     scVI_model_args = kwargs["scVI_model_args"]
     scANVI_model_args = kwargs["scANVI_model_args"]
     
-    if isinstance(adata_query, anndata.AnnData) is False or isinstance(adata_ref, anndata.AnnData) is False:
+    if isinstance(adata_query, ad.AnnData) == False or isinstance(adata_ref, ad.AnnData) == False:
         raise TypeError("One or more of the AnnData objects have an incorrect type,")
 
-    if adata_query.shape[1] != adata_ref.shape[1]:
+    if adata_query.shape[1] != adata_ref.shape[1] or all(adata_query.var_names != adata_ref.var_names) != True:
         common_labels = np.intersect1d(adata_query.var_names, adata_ref.var_names)
+        
+        if len(common_labels) == 0:
+            raise IndexError("Reference and query AnnData objects have different shapes and no overlapping var_names.")
+        
         adata_ref = adata_ref[:, common_labels].copy()
         adata_query = adata_query[:, common_labels].copy()
-        warnings.warn("Reference and query AnnData objects have different shapes, using " + str(len(common_labels)) + " common labels. This may have a deterimental effect on model performance.")
-    
+        warnings.warn("Reference and query AnnData objects have different shapes, using " + str(len(common_labels)) + " common var_names. This may have a deterimental effect on model performance.")
+
+    if len(labels_keys) == 0:
+        raise ValueError("You must specify at least 1 label to map to.")
     try:
         iter(labels_keys)
     except TypeError:
         raise TypeError("labels_keys must be an iterable.")
         
-    if all([i in adata_ref.obs.columns for i in labels_keys]) is False:
-        raise KeyError("One or more labels_keys do not exist in the reference AnnData object.")        
+    if all([i in adata_ref.obs.columns for i in labels_keys]) == False:
+        raise KeyError("One or more labels_keys do not exist in the reference AnnData object.")
+
+    for i in labels_keys:
+        adata_ref.obs[i] = adata_ref.obs[i].astype("category")
     
     if layer != None:
         if layer not in adata_query.layers.keys() or layer not in adata_ref.layers.keys():
-            raise KeyError("Layer " + layer + "does not exist in both AnnData objects.")
+            raise KeyError("Layer " + layer + " does not exist in both AnnData objects.")
+        
+        if isinstance(adata.layers[layer], sp_sparse.csr_matrix) == False:
+            adata.layers[layer] = sp_sparse.csr_matrix(adata.layers[layer])
+            warnings.warn("Counts matrix was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
+
+        if len(adata.layers[layer].data) == 0:
+            raise ValueError("There are no non-zero values in the counts matrix.")
+        
+        if all([i.is_integer() for i in adata.layers[layer].data]) == False:
+            raise TypeError("The counts matrix has non-integer values. This is often caused by data normalization. scVI and scANVI require the raw count matrix.")
     
     else:
-        raise ValueError("You must provide a layer key that contains raw UMIs or counts. AnnData.X is assumed to be log-normalized expression data.")
-    
-    if batch_key is not None:
+        if isinstance(adata.X, sp_sparse.csr_matrix) == False:
+            adata.X = sp_sparse.csr_matrix(adata.X)
+            warnings.warn("Counts matrix was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
+
+        if len(adata.X) == 0:
+            raise ValueError("There are no non-zero values in the counts matrix.")
+        
+        if all([i.is_integer() for i in adata.layers[layer].data]) == False:
+            raise TypeError("The counts matrix has non-integer values. This is often caused by data normalization. scVI and scANVI require the raw count matrix.")
+        
+    if batch_key != None:
         if batch_key not in adata_query.obs.columns or batch_key not in adata_ref.obs.columns:
-            raise KeyError("Batch key is not in both AnnData objects.")
+            raise KeyError("Batch key != in both AnnData objects.")
     try:
-        if all([i in adata_query.obs.columns for i in categorical_covariate_keys]) is False or all([i in adata_ref.obs.columns for i in categorical_covariate_keys]) is False:
+        if all([i in adata_query.obs.columns for i in categorical_covariate_keys]) == False or all([i in adata_ref.obs.columns for i in categorical_covariate_keys]) == False:
             raise KeyError("One or more categorical covariates do not exist in both AnnData objects.")
     except:
         pass
     
     try:    
-        if all([i in adata_query.obs.columns for i in continuous_covariate_keys]) is False or all([i in adata_ref.obs.columns for i in continuous_covariate_keys]) is False:
+        if all([i in adata_query.obs.columns for i in continuous_covariate_keys]) == False or all([i in adata_ref.obs.columns for i in continuous_covariate_keys]) == False:
             warnings.warn("One or more continuous covariates do not exist in both AnnData objects. This can be safely ignored if they are calculated later.")
     except:
         pass
                           
-    for i in [use_hvg, use_de, n_downsample_ref, n_ref_genes, user_genes, max_epochs_scVI, max_epochs_scANVI]:
+    for i in [use_hvg, use_de, n_top_genes, n_downsample_ref, min_ref_cells, n_ref_genes, user_genes, max_epochs_scVI, max_epochs_scANVI]:
         if isinstance(i, bool) or isinstance(i, str) or isinstance(i, int) or i is None:
             i = [i]
         if len(i) != 1 and len(i) != len(labels_keys):
             raise ValueError(str(i) + " should be either a single value used in each iteration or a list of values of equal length to labels_keys.")
-               
-    adata = adata_query.concatenate(adata_ref, index_unique=None)
+    
+    print(str(datetime.now()) + " -- All validation steps completed.")
+
+    query_vars = categorical_covariate_keys + continuous_covariate_keys
+    query_vars.append(batch_key)
+    adata_query.obs = adata_query.obs.loc[:, query_vars].copy()
+
+    ref_vars = query_vars + labels_keys
+    adata_ref.obs = adata_ref.obs.loc[:, ref_vars].copy()
+
+    adata = ad.concat([adata_query, adata_ref], join="outer", merge="unique")
     del adata_query
+
+    try:
+        iter(min_ref_cells)
+        _min_ref_cells = min_ref_cells[-1]
+    except:
+        _min_ref_cells = min_ref_cells
+
+    try:
+        iter(n_downsample_ref)
+        _n_downsample_ref = n_downsample_ref[-1]
+    except:
+        _n_downsample_ref = n_downsample_ref
+
+
+    ref_counts = adata_ref.obs[labels_keys[-1]].value_counts()
+    adata_ref = adata_ref[~(adata_ref.obs[labels_keys[-1]].isin(ref_counts[ref_counts < _min_ref_cells].index))]
+            
+    cells = []
+    for i in adata_ref.obs[labels_keys[-1]].cat.categories:
+        tmp_cells = adata_ref[adata_ref.obs[labels_keys[-1]] == i].obs_names.to_list()
+        
+        if len(tmp_cells) > n_downsample_ref:
+            cells = cells + random.sample(tmp_cells, k=_n_downsample_ref)
+
+        else:
+            cells.extend(tmp_cells)
+
+    adata_ref = adata_ref[cells].copy()
+
+    print(str(datetime.now()) + " -- Finished creating merged and downsampled AnnData objects.") 
     
     
     for i,j in enumerate(labels_keys):
         get_model_genes_kwargs = {
+            "layer": layer,
             "groupby": j,
             "use_hvg": use_hvg[i] if isinstance(use_hvg, list) else use_hvg,
             "use_de": use_de[i] if isinstance(use_de, list) else use_de,
             "n_top_genes": n_top_genes[i] if isinstance(n_top_genes, list) else n_top_genes,
             "n_downsample_ref": n_downsample_ref[i] if isinstance(n_downsample_ref, list) else n_downsample_ref,
+            "min_ref_cells": min_ref_cells[i] if isinstance(min_ref_cells, list) else min_ref_cells,
             "n_ref_genes": n_ref_genes[i] if isinstance(n_ref_genes, list) else n_ref_genes,
             "user_genes": user_genes[i] if isinstance(user_genes, list) else None
         }
@@ -227,7 +301,6 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
             "scANVI_model_args": scANVI_model_args
         }
                 
-        adata_ref.obs[j] = adata_ref.obs[j].astype("category")
         adata.obs[j] = adata.obs[j].astype('object')
         adata.obs.loc[adata.obs[j].isna(), j] = "Unknown"
         adata.obs[j] = adata.obs[j].astype('category')
@@ -239,15 +312,20 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
             model_name = hashlib.md5(str(json.dumps({**get_model_genes_kwargs, **run_scVI_kwargs})).replace("/", " ").encode()).hexdigest()
             label_model_name = hashlib.md5(str(json.dumps({**get_model_genes_kwargs, **run_scANVI_kwargs})).replace("/", " ").encode()).hexdigest()
 
-            if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) is False:
+            if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False:
                 
-                if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) is False:
+                if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) == False:
                     if user_genes is None:
                         markers = get_model_genes(adata_ref, **get_model_genes_kwargs)
                     else:
                         markers = user_genes[i]
                     model = run_scVI(adata[:, markers], **run_scVI_kwargs)
                     model.save(os.path.join(output_dir, "scVI_models", model_name))
+                    pd.DataFrame(markers).to_csv(
+                        os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"),
+                        index=False,
+                        header=False
+                    )
 
                 else:
                     markers = pd.read_csv(os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"), header=None)
@@ -256,10 +334,30 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 
                 label_model, probabilities = run_scANVI(adata[:, markers], model=model, **run_scANVI_kwargs)            
                 label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
+                pd.DataFrame(markers).to_csv(
+                    os.path.join(output_dir, "scANVI_models", label_model_name, "var_names.csv"),
+                    index=False,
+                    header=False
+                )
                 probabilities.to_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"))
+                
+                if save_latent_space == True:
+                    pd.DataFrame(adata.obs_names).to_csv(
+                        os.path.join(output_dir, "scANVI_models", label_model_name, "obs_names.csv"),
+                        index=False,
+                        header=False
+                    )
+                    latent_space = label_model.get_latent_representation()
+                    np.save(
+                        file=os.path.join(output_dir, "scANVI_models", label_model_name, "X_scVI.npy"),
+                        arr=latent_space
+                    )
+                    del latent_space
+
                     
             else:
                 probabilities = pd.read_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"), index_col=0)
+            
             probabilities.index = [str(l) for l in probabilities.index]
             probabilities.dropna(axis=1, how='all', inplace=True)
             probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1, inplace=True)
@@ -275,7 +373,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
 
             conf_mat = adata.obs.groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
 
-            if plot_confusion is True:
+            if plot_confusion == True:
                 display(conf_mat)
 
             conf_mat = conf_mat.div(conf_mat.sum(axis=1), axis=0)
@@ -291,7 +389,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 elif conf_mat.loc[l,l] < min_accuracy:
                     print("WARNING: Label " + l + " fell below accruacy threshold " + str(min_accuracy) + " on reference cells. Accuracy=" + str(conf_mat.loc[l,l]))
 
-            if plot_confusion is True:
+            if plot_confusion == True:
                 plt.figure(figsize=(10, 10))
                 ax = plt.pcolor(conf_mat)
                 ax = plt.xticks(np.arange(0.5, len(conf_mat.columns), 1), conf_mat.columns, rotation=90)
@@ -300,6 +398,34 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 plt.ylabel("Observed")
                 plt.colorbar()
                 plt.show()
+
+
+            if plot_latent_space == True:
+                adata_min = ad.AnnData(
+                        X=sp_sparse.csr_matrix(np.zeros((adata.obs.shape[0], 0))),
+                        obs=adata.obs.copy(),
+                    )
+                adata_min.obsm["X_scVI"] = label_model.get_latent_representation()
+                
+                try:
+                    rsc.pp.neighbors(adata_min, use_rep="X_scVI")
+                    rsc.tl.umap(adata_min)
+                except:
+                    sc.pp.neighbors(adata_min, use_rep="X_scVI")
+                    sc.tl.umap(adata_min)
+
+                for a in labels_keys:
+                    adata_min.obs.loc[adata_min.obs[a] == "Unknown", a] = np.nan
+
+                sc.pp.subsample(adata_min, fraction=1)
+                sc.pl.umap(
+                    adata_min,
+                    color=ref_vars,
+                    sort_order=False,
+                    frameon=False,
+                    ncols=2,
+                )
+                del adata_min
                 
         else:
             for z,k in enumerate(adata_ref.obs[labels_keys[i - 1]].cat.categories):
@@ -311,7 +437,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 label_model_name = hashlib.md5(str(json.dumps({**{labels_keys[i - 1]: k}, **get_model_genes_kwargs, **run_scANVI_kwargs})).replace("/", " ").encode()).hexdigest()
                 
                 cells = adata.obs[labels_keys[i - 1] + "_scANVI"] == k
-                if any(cells) is False:
+                if any(cells) == False:
                     continue
                     
                 adata.obs[labels_keys[i - 1]] = adata.obs[labels_keys[i - 1]].astype("object")
@@ -320,9 +446,9 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 adata.obs[labels_keys[i - 1]] = adata.obs[labels_keys[i - 1]].astype("category")
                 adata.obs[labels_keys[i - 1] + "_scANVI"] = adata.obs[labels_keys[i - 1] + "_scANVI"].astype("category")
                 
-                if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) is False:
+                if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False:
 
-                    if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) is False:
+                    if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) == False:
                         ref_cells = adata_ref.obs[labels_keys[i - 1]] == k
 
                         if user_genes is None:
@@ -335,6 +461,11 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
 
                         model = run_scVI(adata[cells, markers], **run_scVI_kwargs)
                         model.save(os.path.join(output_dir, "scVI_models", model_name))
+                        pd.DataFrame(markers).to_csv(
+                            os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"),
+                            index=False,
+                            header=False
+                        )
 
                     else:
                         markers = pd.read_csv(os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"), header=None)
@@ -344,12 +475,31 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                     try:
                         label_model, probabilities = run_scANVI(adata[cells, markers], model=model, **run_scANVI_kwargs)
                         label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
+                        pd.DataFrame(markers).to_csv(
+                            os.path.join(output_dir, "scANVI_models", label_model_name, "var_names.csv"),
+                            index=False,
+                            header=False
+                        )
                         probabilities.to_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"))
                     except IndexError:
                         continue
 
+                    if save_latent_space == True:
+                        pd.DataFrame(adata[cells, markers].obs_names).to_csv(
+                            os.path.join(output_dir, "scANVI_models", label_model_name, "obs_names.csv"),
+                            index=False,
+                            header=False
+                        )
+                        latent_space = label_model.get_latent_representation()
+                        np.save(
+                            file=os.path.join(output_dir, "scANVI_models", label_model_name, "X_scVI.npy"),
+                            arr=latent_space
+                        )
+                        del latent_space
+
                 else:
                     probabilities = pd.read_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"), index_col=0)
+                
                 probabilities.index = [str(l) for l in probabilities.index]
                 probabilities.dropna(axis=1, how='all', inplace=True)
                 probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1, inplace=True)
@@ -370,7 +520,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
 
                 conf_mat = adata[cells].obs.groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
 
-                if plot_confusion is True:
+                if plot_confusion == True:
                     display(conf_mat)
 
                 conf_mat = conf_mat.div(conf_mat.sum(axis=1), axis=0)
@@ -386,7 +536,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                     elif conf_mat.loc[l,l] < min_accuracy:
                         print("WARNING: Label " + l + " fell below accruacy threshold " + str(min_accuracy) + " on reference cells. Accuracy=" + str(conf_mat.loc[l,l]))
 
-                if plot_confusion is True:
+                if plot_confusion == True:
                     plt.figure(figsize=(10, 10))
                     ax = plt.pcolor(conf_mat)
                     ax = plt.xticks(np.arange(0.5, len(conf_mat.columns), 1), conf_mat.columns, rotation=90)
@@ -395,6 +545,33 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                     plt.ylabel("Observed")
                     plt.colorbar()
                     plt.show()
+
+                if plot_latent_space == True:
+                    adata_min = ad.AnnData(
+                            X=sp_sparse.csr_matrix(np.zeros((adata.obs.loc[cells, :].shape[0], 0))),
+                            obs=adata.obs.loc[cells, :].copy(),
+                        )
+                    adata_min.obsm["X_scVI"] = label_model.get_latent_representation()
+                    
+                    try:
+                        rsc.pp.neighbors(adata_min, use_rep="X_scVI")
+                        rsc.tl.umap(adata_min)
+                    except:
+                        sc.pp.neighbors(adata_min, use_rep="X_scVI")
+                        sc.tl.umap(adata_min)
+
+                    for a in labels_keys:
+                        adata_min.obs.loc[adata_min.obs[a] == "Unknown", a] = np.nan
+
+                    sc.pp.subsample(adata_min, fraction=1)
+                    sc.pl.umap(
+                        adata_min,
+                        color=ref_vars,
+                        sort_order=False,
+                        frameon=False,
+                        ncols=2,
+                    )
+                    del adata_min
                 
     tmp = pd.concat([adata.obs.iloc[:, int(np.where(adata.obs.columns == labels_keys[0] + "_scANVI")[0]):], adata.obs.iloc[:, np.where([i in labels_keys for i in adata.obs.columns])[0]]], axis=1)
     tmp.to_csv(os.path.join(output_dir, "iterative_scANVI_results." + str(datetime.date(datetime.now())) + ".csv"))
@@ -411,7 +588,7 @@ adata_ref: (AnnData) object with reference labels
     
     use_de: (bool, default True) Whether to calculate and include differentially genes from the reference dataset to scVI and scANVI
     
-    n_top_genes: (int or list, default 2000) Number of highly variable genes to pass in each iteration. Not used if use_hvg is False
+    n_top_genes: (int or list, default 2000) Number of highly variable genes to pass in each iteration. Not used if use_hvg == False
     
     n_downsample_ref: (int or list, default 1000) Number of cells to downsample reference groups too in each iteration when 
     calculcating differentially expressed genes
@@ -424,7 +601,7 @@ Returns list of unique markers from the procedure above
 '''
                              
 def get_model_genes(adata_ref, **kwargs):
-    
+    layer = kwargs["layer"]
     groupby = kwargs["groupby"]
     use_hvg = kwargs["use_hvg"]
     use_de = kwargs["use_de"]
@@ -435,23 +612,45 @@ def get_model_genes(adata_ref, **kwargs):
     
     markers = []
     
-    if "log1p" not in adata_ref.uns_keys():    
-        sc.pp.normalize_total(adata_ref, target_sum=1e4)
-        sc.pp.log1p(adata_ref)
-    
-    if use_hvg is True:
+    if "log1p" not in adata_ref.uns_keys():
+        if layer == None:
+            adata_ref.layer["log_normalized"] = adata_ref.X.copy()
+        else:
+            adata_ref.layer["log_normalized"] = adata_ref.layers[layer].copy()
+
         try:
-            sc.pp.highly_variable_genes(adata_ref, flavor="seurat_v3", n_top_genes=n_top_genes, layer="UMIs")
+            rsc.get.anndata_to_GPU(adata_ref, layer="log_normalized")
+            rsc.pp.normalize_total(adata_ref, target_sum=1e4, layer="log_normalized")
+            rsc.pp.log1p(adata_ref, layer="log_normalized")
+            rsc.get.anndata_to_CPU(adata_ref, layer="log_normalized")
         except:
-            sc.pp.highly_variable_genes(adata_ref, min_mean=1, min_disp=0.5)    
+            sc.pp.normalize_total(adata_ref, target_sum=1e4, layer="log_normalized")
+            sc.pp.log1p(adata_ref, layer="log_normalized")
+    
+    if use_hvg == True:
+        try:
+            try:
+                rsc.get.anndata_to_GPU(adata_ref, layer=layer)
+                rsc.pp.highly_variable_genes(adata_ref, flavor="seurat_v3", n_top_genes=n_top_genes, layer=layer)
+                rsc.get.anndata_to_CPU(adata_ref, layer=layer)
+            except:
+                rsc.get.anndata_to_GPU(adata_ref, layer="log_normalized")
+                rsc.pp.highly_variable_genes(adata_ref, min_mean=1, min_disp=0.5, max_mean=np.inf, layer="log_normalized")
+                rsc.get.anndata_to_CPU(adata_ref, layer="log_normalized")
+        except:
+            try:
+                sc.pp.highly_variable_genes(adata_ref, flavor="seurat_v3", n_top_genes=n_top_genes, layer=layer)
+            except:
+                sc.pp.highly_variable_genes(adata_ref, min_mean=1, min_disp=0.5, max_mean=np.inf, layer="log_normalized")
+
         markers = adata_ref.var[adata_ref.var.highly_variable == True].index.to_list()
         
-    if use_de is True:
-        ref_counts = adata_ref.obs[groupby].value_counts()
-        adata_ref = adata_ref[~(adata_ref.obs[groupby].isin(ref_counts[ref_counts < 15].index))]
-        
+    if use_de == True:
         if np.setdiff1d(adata_ref.obs[groupby].cat.categories, "Unknown").shape[0] > 1:
-            
+
+            ref_counts = adata_ref.obs[groupby].value_counts()
+            adata_ref = adata_ref[~(adata_ref.obs[groupby].isin(ref_counts[ref_counts < min_ref_cells].index))]
+                    
             cells = []
             for i in adata_ref.obs[groupby].cat.categories:
                 tmp_cells = adata_ref[adata_ref.obs[groupby] == i].obs_names.to_list()
@@ -463,7 +662,7 @@ def get_model_genes(adata_ref, **kwargs):
                     cells.extend(tmp_cells)
 
             adata_ref = adata_ref[cells]
-            
+
             sc.tl.rank_genes_groups(adata_ref, method="wilcoxon", tie_correct=True, groupby=groupby, pts=True)
 
             result = adata_ref.uns['rank_genes_groups']
@@ -666,23 +865,27 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, d
     
     results_file = "iterative_scANVI_results." + date + ".csv"
     
-    if isinstance(adata_query, anndata.AnnData) is False or isinstance(adata_ref, anndata.AnnData) is False:
+    if isinstance(adata_query, ad.AnnData) == False or isinstance(adata_ref, ad.AnnData) == False:
         raise TypeError("One or more of the AnnData objects have an incorrect type,")
         
-    if adata_query.shape[1] != adata_ref.shape[1]:
+    if adata_query.shape[1] != adata_ref.shape[1] or all(adata_query.var_names != adata_ref.var_names) != True:
         common_labels = np.intersect1d(adata_query.var_names, adata_ref.var_names)
+        
+        if len(common_labels) == 0:
+            raise IndexError("Reference and query AnnData objects have different shapes and no overlapping var_names.")
+        
         adata_ref = adata_ref[:, common_labels].copy()
         adata_query = adata_query[:, common_labels].copy()
-        print("WARNING: Reference and query AnnData objects have different shapes, using " + str(len(common_labels)) + " common labels. This may have a deterimental effect on model performance.")
-    
-    if split_key is not None:
-        if split_key in adata_ref.obs.columns is False or split_key in adata_query.obs.columns is False:
+        warnings.warn("Reference and query AnnData objects have different shapes, using " + str(len(common_labels)) + " common var_names. This may have a deterimental effect on model performance.")
+
+    if split_key != None:
+        if split_key in adata_ref.obs.columns == False or split_key in adata_query.obs.columns == False:
             raise KeyError("One or more labels_keys do not exist in the reference AnnData object.")
         
-    if os.path.exists(os.path.join(output_dir, results_file)) is False:
+    if os.path.exists(os.path.join(output_dir, results_file)) == False:
         raise ValueError("Output directory lacks an iterative scANVI results file.")
-    
-    adata = adata_query.concatenate(adata_ref, index_unique=None)
+
+    adata = ad.concat([adata_query, adata_ref], join="outer", merge="unique")
     del adata_query
     
     try:
@@ -702,10 +905,10 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, d
         adata.obs = pd.concat([adata.obs, scANVI_results.loc[adata.obs_names, :]], axis=1)
         
     except:
-        print("WARNING: Error merging scANVI results, saving AnnData without them.")
+        warnings.warn("WARNING: Error merging scANVI results, saving AnnData without them.")
         pass
         
-    if os.path.exists(os.path.join(output_dir, "objects")) is False:
+    if os.path.exists(os.path.join(output_dir, "objects")) == False:
         os.makedirs(os.path.join(output_dir, "objects"))
         
     for j in adata.obs.columns:
@@ -715,28 +918,28 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, d
             adata.obs[j] = adata.obs[j].replace({True: "True", False: "False"})
 
     for i in adata.obs.columns[adata.obs.isna().sum(axis=0) > 0]:
-        if any(adata.obs[i].notna()) is False:
+        if any(adata.obs[i].notna()) == False:
             print("Dropping no-value column " + i)
             adata.obs.drop([i], axis=1, inplace=True)
                 
         else:            
             replace_with = ""
             
-            if isinstance(adata.obs.loc[adata.obs[i].notna(), i][0], np.float64) is True or isinstance(adata.obs.loc[adata.obs[i].notna(), i][0], np.float32) is True:
+            if isinstance(adata.obs.loc[adata.obs[i].notna(), i][0], np.float64) == True or isinstance(adata.obs.loc[adata.obs[i].notna(), i][0], np.float32) == True:
                 replace_with = 0.0
 
-            if isinstance(adata.obs[i].dtype, pd.core.dtypes.dtypes.CategoricalDtype) is True:
+            if isinstance(adata.obs[i].dtype, pd.core.dtypes.dtypes.CategoricalDtype) == True:
                 adata.obs[i] = adata.obs[i].astype("object")
             
             print("Replacing NaNs with " + str(replace_with) + " for " + i + " with dtype " + str(type(adata.obs.loc[adata.obs[i].notna(), i][0])))
             adata.obs.loc[adata.obs[i].isna(), i] = replace_with
             
-            if isinstance(adata.obs.loc[(adata.obs[i].notna()) & (adata.obs[i] != ""), i][0], bool) is True:
+            if isinstance(adata.obs.loc[(adata.obs[i].notna()) & (adata.obs[i] != ""), i][0], bool) == True:
                 adata.obs[i] = [str(l) for l in adata.obs[i]]
             
     if split_key != None:
             
-        if isinstance(adata.obs[split_key].dtype, pd.core.dtypes.dtypes.CategoricalDtype) is False:
+        if isinstance(adata.obs[split_key].dtype, pd.core.dtypes.dtypes.CategoricalDtype) == False:
             adata.obs[split_key] = adata.obs[split_key].astype("category")
 
         if len(adata.obs[split_key].cat.categories) == 1:
@@ -762,14 +965,20 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, d
             sub = adata
                     
         with parallel_backend('threading', n_jobs=n_cores):
-            if normalize_data is True:
-                sc.pp.normalize_total(sub, 1e4)
-                sc.pp.log1p(sub)
+            if normalize_data == True:
+                try:
+                    rsc.get.anndata_to_GPU(sub)
+                    rsc.pp.normalize_total(sub, 1e4)
+                    rsc.pp.log1p(sub)
+                    rsc.get.anndata_to_CPU(sub)
+                except:
+                    sc.pp.normalize_total(sub, 1e4)
+                    sc.pp.log1p(sub)
 
-            if calculate_umap is True:
+            if calculate_umap == True:
                 model_name, label_model_name = get_model_names(model_split_key, i, groupby, **model_args)
                 
-                if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) is False:
+                if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False:
                     # To do, implement option to perform 1-off training of an scVI model
                     print("WARNING: Cannot find the scVI model, did you run iterative_scANVI?")
                 
@@ -799,8 +1008,13 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, d
 
                     label_model = scvi.model.SCANVI.load(os.path.join(output_dir, "scANVI_models", label_model_name), sub_markers_only)
                     sub.obsm["X_scVI"] = label_model.get_latent_representation()
-                    sc.pp.neighbors(sub, use_rep="X_scVI")
-                    sc.tl.umap(sub)
+                    try:
+                        rsc.pp.neighbors(sub, use_rep="X_scVI")
+                        rsc.tl.umap(sub)
+                    except:
+                        sc.pp.neighbors(sub, use_rep="X_scVI")
+                        sc.tl.umap(sub)
+
             
         sub.write(os.path.join(output_dir, "objects", i.replace("/", " ") + "_scANVI." + date + ".h5ad"))
 
@@ -827,7 +1041,7 @@ groupby: (str) Label predicted within the split_key (e.g. cluster if split_key i
     
     use_de: (bool, default True) Whether to calculate and include differentially genes from the reference dataset to scVI and scANVI
     
-    n_top_genes: (int or list, default 2000) Number of highly variable genes to pass in each iteration. Not used if use_hvg is False
+    n_top_genes: (int or list, default 2000) Number of highly variable genes to pass in each iteration. Not used if use_hvg == False
     
     n_downsample_ref: (int or list, default 1000) Number of cells to downsample reference groups too in each iteration when 
     calculcating differentially expressed genes
@@ -851,7 +1065,7 @@ Returns tupple with scVI and scANVI model names (str)
 def get_model_names(split_key, split_value, groupby, **kwargs):
     
     default_kwargs = {
-        "layer": "UMIs",
+        "layer": None,
         "batch_key": None,
         "categorical_covariate_keys": None,
         "continuous_covariate_keys": None,
@@ -859,11 +1073,12 @@ def get_model_names(split_key, split_value, groupby, **kwargs):
         "use_de": True,
         "n_top_genes": 2000,
         "n_downsample_ref": 1000,
+        "min_ref_cells": 15,
         "n_ref_genes": 500,
         "max_epochs_scVI": 200,
         "max_epochs_scANVI": 20,
         "scVI_model_args": {"n_layers": 2},
-        "scANVI_model_args": {},
+        "scANVI_model_args": {"n_layers": 2},
         "user_genes": None
     }
         
@@ -877,6 +1092,7 @@ def get_model_names(split_key, split_value, groupby, **kwargs):
     use_de = kwargs["use_de"]
     n_top_genes = kwargs["n_top_genes"]
     n_downsample_ref = kwargs["n_downsample_ref"]
+    min_ref_cells = kwargs["min_ref_cells"]
     n_ref_genes = kwargs["n_ref_genes"]
     max_epochs_scVI = kwargs["max_epochs_scVI"]
     max_epochs_scANVI = kwargs["max_epochs_scANVI"]
@@ -885,11 +1101,13 @@ def get_model_names(split_key, split_value, groupby, **kwargs):
     user_genes = kwargs["user_genes"]
     
     get_model_genes_kwargs = {
+        "layer": layer,
         "groupby": groupby,
         "use_hvg": use_hvg,
         "use_de": use_de,
         "n_top_genes": n_top_genes,
         "n_downsample_ref": n_downsample_ref,
+        "min_ref_cells": min_ref_cells,
         "n_ref_genes": n_ref_genes,
         "user_genes": user_genes
     }
