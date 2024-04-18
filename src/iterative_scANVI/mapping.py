@@ -164,7 +164,6 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
         
         if len(common_labels) == 0:
             raise IndexError("Reference and query AnnData objects have different shapes and no overlapping var_names.")
-        
         adata_ref = adata_ref[:, common_labels].copy()
         adata_query = adata_query[:, common_labels].copy()
         warnings.warn("Reference and query AnnData objects have different shapes, using " + str(len(common_labels)) + " common var_names. This may have a deterimental effect on model performance.")
@@ -186,26 +185,35 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
         if layer not in adata_query.layers.keys() or layer not in adata_ref.layers.keys():
             raise KeyError("Layer " + layer + " does not exist in both AnnData objects.")
         
-        if isinstance(adata.layers[layer], sp_sparse.csr_matrix) == False:
-            adata.layers[layer] = sp_sparse.csr_matrix(adata.layers[layer])
-            warnings.warn("Counts matrix was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
+        if isinstance(adata_query.layers[layer], sp_sparse.csr_matrix) == False:
+            adata_query.layers[layer] = sp_sparse.csr_matrix(adata_query.layers[layer])
+            warnings.warn("Counts matrix in the query anndata was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
 
-        if len(adata.layers[layer].data) == 0:
-            raise ValueError("There are no non-zero values in the counts matrix.")
+        if isinstance(adata_ref.layers[layer], sp_sparse.csr_matrix) == False:
+            adata_ref.layers[layer] = sp_sparse.csr_matrix(adata_ref.layers[layer])
+            warnings.warn("Counts matrix in the reference anndata was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
+
+        if len(adata_query.layers[layer].data) == 0 or len(adata_ref.layers[layer].data) == 0:
+            raise ValueError("There are no non-zero values in one of the anndata counts matrices.")
         
-        if all([i.is_integer() for i in adata.layers[layer].data]) == False:
-            raise TypeError("The counts matrix has non-integer values. This is often caused by data normalization. scVI and scANVI require the raw count matrix.")
+        if all([i.is_integer() for i in adata_query.layers[layer].data]) == False or all([i.is_integer() for i in adata_ref.layers[layer].data]) == False:
+            raise TypeError("One of the anndata counts matrices has non-integer values. This is often caused by data normalization. scVI and scANVI require the raw count matrix.")
     
+   
     else:
-        if isinstance(adata.X, sp_sparse.csr_matrix) == False:
-            adata.X = sp_sparse.csr_matrix(adata.X)
+        if isinstance(adata_query.X, sp_sparse.csr_matrix) == False:
+            adata_query.X = sp_sparse.csr_matrix(adata_query.X)
             warnings.warn("Counts matrix was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
 
-        if len(adata.X) == 0:
-            raise ValueError("There are no non-zero values in the counts matrix.")
+        if isinstance(adata_ref.X, sp_sparse.csr_matrix) == False:
+            adata_ref.X = sp_sparse.csr_matrix(adata_ref.X)
+            warnings.warn("Counts matrix was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
+
+        if len(adata_query.X.data) == 0 or len(adata_ref.X.data) == 0:
+            raise ValueError("There are no non-zero values in one of the anndata counts matrices.")
         
-        if all([i.is_integer() for i in adata.layers[layer].data]) == False:
-            raise TypeError("The counts matrix has non-integer values. This is often caused by data normalization. scVI and scANVI require the raw count matrix.")
+        if all([i.is_integer() for i in adata_query.X.data]) == False or all([i.is_integer() for i in adata_ref.X.data]) == False:
+            raise TypeError("One of the anndata counts matrices has non-integer values. This is often caused by data normalization. scVI and scANVI require the raw count matrix.")
         
     if batch_key != None:
         if batch_key not in adata_query.obs.columns or batch_key not in adata_ref.obs.columns:
