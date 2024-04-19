@@ -253,6 +253,9 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     adata = ad.concat([adata_query, adata_ref], join="outer", merge="unique")
     del adata_query
 
+    adata.obs_names = [str(i) for i in adata.obs_names]
+    adata.ref = [str(i) for i in adata_ref.obs_names]
+
     try:
         iter(min_ref_cells)
         _min_ref_cells = min_ref_cells[-1]
@@ -371,14 +374,9 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
             else:
                 probabilities = pd.read_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"), index_col=0)
             
-            print(probabilities)
-            probabilities.index = [str(l) for l in probabilities.index]
             probabilities.dropna(axis=1, how='all', inplace=True)
-            print(probabilities)
             probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1, inplace=True)
-            print(probabilities)
             tmp = pd.merge(adata.obs, probabilities, how="left", left_index=True, right_index=True)
-            print(probabilities)
             for l in [m for m in tmp.columns if m.endswith("_y")]:
                 l = l.replace("_y", "")
                 tmp[l + "_x"] = tmp[l + "_x"].astype("object")
@@ -387,7 +385,6 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 tmp[l] = tmp[l].astype("category")
                 tmp.drop([l + "_y", l + "_x"], axis=1, inplace=True)
 
-            print(tmp)
             adata.obs = tmp.copy()
 
             conf_mat = adata.obs.groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
@@ -519,7 +516,6 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 else:
                     probabilities = pd.read_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"), index_col=0)
                 
-                probabilities.index = [str(l) for l in probabilities.index]
                 probabilities.dropna(axis=1, how='all', inplace=True)
                 probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1, inplace=True)
                 tmp = pd.merge(adata.obs, probabilities, how="left", left_index=True, right_index=True)
@@ -803,9 +799,16 @@ def run_scANVI(adata, model, **kwargs):
     adata.obs[labels_key + "_scANVI"] = label_model.predict()
     adata.obs[labels_key + "_scANVI"] = adata.obs[labels_key + "_scANVI"].astype("category")
 
+    print(adata)
+    print(adata.obs)
+
     probabilities = label_model.predict(soft=True)
+    print(probabilities)
 
     tmp = pd.merge(adata.obs, probabilities, how="left", left_index=True, right_index=True)
+
+    print(tmp)
+
     for l in [m for m in tmp.columns if m.endswith("_y")]:
         l = l.replace("_y", "")
         tmp[l + "_x"] = tmp[l + "_x"].astype("object")
@@ -813,6 +816,8 @@ def run_scANVI(adata, model, **kwargs):
         tmp[l] = tmp[l + "_y"].fillna(tmp[l + "_x"])
         tmp[l] = tmp[l].astype("category")
         tmp.drop([l + "_y", l + "_x"], axis=1, inplace=True)
+
+    print(tmp)
     adata.obs = tmp.copy()
 
     adata.obs[labels_key + "_conf_scANVI"] = 0
