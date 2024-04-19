@@ -785,7 +785,13 @@ def run_scANVI(adata, model, **kwargs):
         labels_key=labels_key,
         unlabeled_category="Unknown"
     )
-    label_model = scvi.model.SCANVI.from_scvi_model(model, unlabeled_category="Unknown", adata=adata, **scANVI_model_args)
+    label_model = scvi.model.SCANVI.from_scvi_model(
+        model,
+        unlabeled_category="Unknown",
+        labels_key=labels_key,
+        adata=adata,
+        **scANVI_model_args
+    )
     label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True)
     
     adata.obs[labels_key + "_scANVI"] = label_model.predict()
