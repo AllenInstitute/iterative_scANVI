@@ -719,7 +719,7 @@ def get_model_genes(adata_ref, **kwargs):
 
             adata_ref = adata_ref[cells]
 
-            sc.tl.rank_genes_groups(adata_ref, method="wilcoxon", tie_correct=True, groupby=groupby, pts=True)
+            sc.tl.rank_genes_groups(adata_ref, method="wilcoxon", tie_correct=True, groupby=groupby, pts=True, layer="log_normalized")
 
             result = adata_ref.uns['rank_genes_groups']
             groups = result['names'].dtype.names
