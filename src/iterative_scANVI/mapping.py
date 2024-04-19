@@ -179,14 +179,17 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
 
     for i in labels_keys:
         adata_ref.obs[i] = adata_ref.obs[i].astype("category")
-        if len(np.intersect1d(adata_ref.obs[i].cat.categories, batch_key)) > 0:
-            raise ValueError("The batch key cannot also be the name of a value in any labels_key.")
+        if batch_key != None:
+            if len(np.intersect1d(adata_ref.obs[i].cat.categories, batch_key)) > 0:
+                raise ValueError("The batch key cannot also be the name of a value in any labels_key.")
 
-        if len(np.intersect1d(adata_ref.obs[i].cat.categories, categorical_covariate_keys)) > 0:
-            raise ValueError("The categorical_covariate_keys cannot also be the name of a value in any labels_key.")
+        if categorical_covariate_keys != None:
+            if len(np.intersect1d(adata_ref.obs[i].cat.categories, categorical_covariate_keys)) > 0:
+                raise ValueError("The categorical_covariate_keys cannot also be the name of a value in any labels_key.")
 
-        if len(np.intersect1d(adata_ref.obs[i].cat.categories, continuous_covariate_keys)) > 0:
-            raise ValueError("The continuous_covariate_keys cannot also be the name of a value in any labels_key.")
+        if continuous_covariate_keys != None:
+            if len(np.intersect1d(adata_ref.obs[i].cat.categories, continuous_covariate_keys)) > 0:
+                raise ValueError("The continuous_covariate_keys cannot also be the name of a value in any labels_key.")
     
     if layer != None:
         if layer not in adata_query.layers.keys() or layer not in adata_ref.layers.keys():
