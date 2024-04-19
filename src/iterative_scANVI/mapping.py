@@ -179,6 +179,14 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
 
     for i in labels_keys:
         adata_ref.obs[i] = adata_ref.obs[i].astype("category")
+        if len(np.intersect1d(adata_ref.obs[i].cat.categories, batch_key)) > 0:
+            raise ValueError("The batch key cannot also be the name of a value in any labels_key.")
+
+        if len(np.intersect1d(adata_ref.obs[i].cat.categories, categorical_covariate_keys)) > 0:
+            raise ValueError("The categorical_covariate_keys cannot also be the name of a value in any labels_key.")
+
+        if len(np.intersect1d(adata_ref.obs[i].cat.categories, continuous_covariate_keys)) > 0:
+            raise ValueError("The continuous_covariate_keys cannot also be the name of a value in any labels_key.")
     
     if layer != None:
         if layer not in adata_query.layers.keys() or layer not in adata_ref.layers.keys():
@@ -374,16 +382,16 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
             else:
                 probabilities = pd.read_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"), index_col=0)
             
-            probabilities.dropna(axis=1, how='all', inplace=True)
-            probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1, inplace=True)
-            tmp = pd.merge(adata.obs, probabilities, how="left", left_index=True, right_index=True)
+            probabilities = probabilities.dropna(axis=1, how='all')
+            probabilities = probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1, )
+            tmp = pd.concat([adata.obs, probabilities], axis=1)
             for l in [m for m in tmp.columns if m.endswith("_y")]:
                 l = l.replace("_y", "")
                 tmp[l + "_x"] = tmp[l + "_x"].astype("object")
                 tmp[l + "_y"] = tmp[l + "_y"].astype("object")
                 tmp[l] = tmp[l + "_y"].fillna(tmp[l + "_x"])
                 tmp[l] = tmp[l].astype("category")
-                tmp.drop([l + "_y", l + "_x"], axis=1, inplace=True)
+                tmp = tmp.drop([l + "_y", l + "_x"], axis=1)
 
             adata.obs = tmp.copy()
 
@@ -516,16 +524,16 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 else:
                     probabilities = pd.read_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"), index_col=0)
                 
-                probabilities.dropna(axis=1, how='all', inplace=True)
-                probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1, inplace=True)
-                tmp = pd.merge(adata.obs, probabilities, how="left", left_index=True, right_index=True)
+                probabilities = probabilities.dropna(axis=1, how='all')
+                probabilities = probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1)
+                tmp = pd.concat([adata.obs, probabilities], axis=1)
                 for l in [m for m in tmp.columns if m.endswith("_y")]:
                     l = l.replace("_y", "")
                     tmp[l + "_x"] = tmp[l + "_x"].astype("object")
                     tmp[l + "_y"] = tmp[l + "_y"].astype("object")
                     tmp[l] = tmp[l + "_y"].fillna(tmp[l + "_x"])
                     tmp[l] = tmp[l].astype("category")
-                    tmp.drop([l + "_y", l + "_x"], axis=1, inplace=True)
+                    tmp = tmp.drop([l + "_y", l + "_x"], axis=1)
                 adata.obs = tmp.copy()
                 
                 confs = [l for l in adata.obs.columns if l.endswith("_conf_scANVI")]
@@ -689,10 +697,10 @@ def get_model_genes(adata_ref, **kwargs):
                 marker_genes[group]['pts'] = result['pts'][group][result['names'][group]].to_list()
                 marker_genes[group]['pts_rest'] = result['pts_rest'][group][result['names'][group]].to_list()
                 marker_genes[group].index = marker_genes[group].names
-                marker_genes[group].drop(columns=['names'], inplace=True)
+                marker_genes[group] = marker_genes[group].drop(columns=['names'])
                 tmp_genes = marker_genes[group].copy()
                 tmp_genes = tmp_genes[tmp_genes.pvals_adj < 0.05]
-                tmp_genes.sort_values(by="logfoldchanges", axis=0, inplace=True, ascending=False)
+                tmp_genes = tmp_genes.sort_values(by="logfoldchanges", axis=0, ascending=False)
                 markers.extend(tmp_genes.head(n_ref_genes).index.to_list())
         else:
             warnings.warn(groupby + " contains only one label. Differentially expressed genes were NOT included in the model")
@@ -799,25 +807,16 @@ def run_scANVI(adata, model, **kwargs):
     adata.obs[labels_key + "_scANVI"] = label_model.predict()
     adata.obs[labels_key + "_scANVI"] = adata.obs[labels_key + "_scANVI"].astype("category")
 
-    print(adata)
-    print(adata.obs)
-
     probabilities = label_model.predict(soft=True)
-    print(probabilities)
-    print(probabilities.index)
-    print(adata.obs.index)
 
-    tmp = pd.merge(adata.obs, probabilities, how="left", left_index=True, right_index=True)
-
-    print(tmp)
-
+    tmp = pd.concat([adata.obs, probabilities], axis=1)
     for l in [m for m in tmp.columns if m.endswith("_y")]:
         l = l.replace("_y", "")
         tmp[l + "_x"] = tmp[l + "_x"].astype("object")
         tmp[l + "_y"] = tmp[l + "_y"].astype("object")
         tmp[l] = tmp[l + "_y"].fillna(tmp[l + "_x"])
         tmp[l] = tmp[l].astype("category")
-        tmp.drop([l + "_y", l + "_x"], axis=1, inplace=True)
+        tmp = tmp.drop([l + "_y", l + "_x"], axis=1)
 
     print(tmp)
     adata.obs = tmp.copy()
@@ -932,7 +931,7 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, d
             print("WARNING: Mismatch between cells in scANVI results and merged AnnData object, using " + str(len(common_cells)) + " common cells. Was this expected?") 
             
         if groupby in adata.obs.columns:
-            adata.obs.drop([groupby], axis=1, inplace=True)
+            adata.obs = adata.obs.drop([groupby], axis=1)
         
         scANVI_results = scANVI_results.loc[:, np.setdiff1d(scANVI_results.columns, adata.obs.columns)]
         
@@ -954,7 +953,7 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, d
     for i in adata.obs.columns[adata.obs.isna().sum(axis=0) > 0]:
         if any(adata.obs[i].notna()) == False:
             print("Dropping no-value column " + i)
-            adata.obs.drop([i], axis=1, inplace=True)
+            adata.obs = adata.obs.drop([i], axis=1)
                 
         else:            
             replace_with = ""
