@@ -386,7 +386,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 probabilities = pd.read_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"), index_col=0)
             
             probabilities = probabilities.dropna(axis=1, how='all')
-            probabilities = probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1, )
+            probabilities = probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1)
             tmp = pd.concat([adata.obs, probabilities], axis=1)
             for l in [m for m in tmp.columns if m.endswith("_y")]:
                 l = l.replace("_y", "")
@@ -605,7 +605,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                     )
                     del adata_min
                 
-    tmp = pd.concat([adata.obs.iloc[:, int(np.where(adata.obs.columns == labels_keys[0] + "_scANVI")[0]):], adata.obs.iloc[:, np.where([i in labels_keys for i in adata.obs.columns])[0]]], axis=1)
+    tmp = pd.concat([adata.obs.iloc[:, int(np.where(adata.obs.columns == labels_keys[0] + "_stash")[0]):], adata.obs.iloc[:, np.where([i in labels_keys for i in adata.obs.columns])[0]]], axis=1)
     tmp.to_csv(os.path.join(output_dir, "iterative_scANVI_results." + str(datetime.date(datetime.now())) + ".csv"))
 
 '''
