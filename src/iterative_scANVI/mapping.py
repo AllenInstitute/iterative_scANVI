@@ -371,10 +371,14 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
             else:
                 probabilities = pd.read_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"), index_col=0)
             
+            print(probabilities)
             probabilities.index = [str(l) for l in probabilities.index]
             probabilities.dropna(axis=1, how='all', inplace=True)
+            print(probabilities)
             probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1, inplace=True)
+            print(probabilities)
             tmp = pd.merge(adata.obs, probabilities, how="left", left_index=True, right_index=True)
+            print(probabilities)
             for l in [m for m in tmp.columns if m.endswith("_y")]:
                 l = l.replace("_y", "")
                 tmp[l + "_x"] = tmp[l + "_x"].astype("object")
@@ -382,6 +386,8 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 tmp[l] = tmp[l + "_y"].fillna(tmp[l + "_x"])
                 tmp[l] = tmp[l].astype("category")
                 tmp.drop([l + "_y", l + "_x"], axis=1, inplace=True)
+
+            print(tmp)
             adata.obs = tmp.copy()
 
             conf_mat = adata.obs.groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
