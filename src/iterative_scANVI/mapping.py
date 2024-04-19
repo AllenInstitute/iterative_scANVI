@@ -170,10 +170,9 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
 
     if len(labels_keys) == 0:
         raise ValueError("You must specify at least 1 label to map to.")
-    try:
-        iter(labels_keys)
-    except TypeError:
-        raise TypeError("labels_keys must be an iterable.")
+
+    if isinstance(label_keys, list) == False:
+        raise TypeError("labels_keys must be a list.")
         
     if all([i in adata_ref.obs.columns for i in labels_keys]) == False:
         raise KeyError("One or more labels_keys do not exist in the reference AnnData object.")
@@ -238,8 +237,14 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     
     print(str(datetime.now()) + " -- All validation steps completed.")
 
-    query_vars = categorical_covariate_keys + continuous_covariate_keys
-    query_vars.append(batch_key)
+    query_vars = []
+    for i in [categorical_covariate_keys, continuous_covariate_keys, batch_key]:
+        if i != None:
+            if isinstance(i, str) == True:
+                query_vars.append(i)
+            else:
+                query_vars.extend(i)
+
     adata_query.obs = adata_query.obs.loc[:, query_vars].copy()
 
     ref_vars = query_vars + labels_keys
