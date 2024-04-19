@@ -401,7 +401,10 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
             conf_mat = adata.obs.groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
 
             if plot_confusion == True:
-                display(conf_mat)
+                try:
+                    display(conf_mat)
+                except:
+                    print(conf_mat)
 
             conf_mat = conf_mat.div(conf_mat.sum(axis=1), axis=0)
             conf_mat[conf_mat.isna()] = 0
@@ -547,7 +550,10 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 conf_mat = adata[cells].obs.groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
 
                 if plot_confusion == True:
-                    display(conf_mat)
+                    try:
+                        display(conf_mat)
+                    except:
+                        print(conf_mat)
 
                 conf_mat = conf_mat.div(conf_mat.sum(axis=1), axis=0)
                 conf_mat[conf_mat.isna()] = 0
@@ -821,7 +827,6 @@ def run_scANVI(adata, model, **kwargs):
         tmp[l] = tmp[l].astype("category")
         tmp = tmp.drop([l + "_y", l + "_x"], axis=1)
 
-    print(tmp)
     adata.obs = tmp.copy()
 
     adata.obs[labels_key + "_conf_scANVI"] = 0
