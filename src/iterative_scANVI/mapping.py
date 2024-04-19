@@ -804,6 +804,8 @@ def run_scANVI(adata, model, **kwargs):
 
     probabilities = label_model.predict(soft=True)
     print(probabilities)
+    print(probabilities.index)
+    print(adata.obs.index)
 
     tmp = pd.merge(adata.obs, probabilities, how="left", left_index=True, right_index=True)
 
