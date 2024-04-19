@@ -171,7 +171,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     if len(labels_keys) == 0:
         raise ValueError("You must specify at least 1 label to map to.")
 
-    if isinstance(label_keys, list) == False:
+    if isinstance(labels_keys, list) == False:
         raise TypeError("labels_keys must be a list.")
         
     if all([i in adata_ref.obs.columns for i in labels_keys]) == False:
