@@ -398,6 +398,9 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
 
             adata.obs = tmp.copy()
 
+            print(adata.obs)
+
+
             conf_mat = adata.obs.groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
 
             if plot_confusion == True:
@@ -541,9 +544,9 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                     tmp[l] = tmp[l].astype("category")
                     tmp = tmp.drop([l + "_y", l + "_x"], axis=1)
                 adata.obs = tmp.copy()
+                print(adata.obs)
                 
                 confs = [l for l in adata.obs.columns if l.endswith("_conf_scANVI")]
-                
                 for l in confs:
                     adata.obs[l] = adata.obs[l].astype('float')
 
@@ -829,6 +832,8 @@ def run_scANVI(adata, model, **kwargs):
 
     adata.obs = tmp.copy()
 
+    print(adata.obs)
+
     adata.obs[labels_key + "_conf_scANVI"] = 0
     adata.obs[labels_key + "_conf_scANVI"] = adata.obs[labels_key + "_conf_scANVI"].astype("float")
     adata.obs = adata.obs.copy()
@@ -841,6 +846,8 @@ def run_scANVI(adata, model, **kwargs):
     to_pass.extend(adata.obs[labels_key + "_scANVI"].cat.categories)
     probabilities = adata.obs.loc[:, to_pass]
     
+    print(probabilities)
+
     return (label_model, probabilities)
 
 '''
