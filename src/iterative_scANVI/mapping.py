@@ -620,6 +620,7 @@ def get_model_genes(adata_ref, **kwargs):
     use_de = kwargs["use_de"]
     n_top_genes = kwargs["n_top_genes"]
     n_downsample_ref = kwargs["n_downsample_ref"]
+    min_ref_cells = kwargs["min_ref_cells"]
     n_ref_genes = kwargs["n_ref_genes"]
     user_genes = kwargs["user_genes"]
     
@@ -627,9 +628,9 @@ def get_model_genes(adata_ref, **kwargs):
     
     if "log1p" not in adata_ref.uns_keys():
         if layer == None:
-            adata_ref.layer["log_normalized"] = adata_ref.X.copy()
+            adata_ref.layers["log_normalized"] = adata_ref.X.copy()
         else:
-            adata_ref.layer["log_normalized"] = adata_ref.layers[layer].copy()
+            adata_ref.layers["log_normalized"] = adata_ref.layers[layer].copy()
 
         try:
             rsc.get.anndata_to_GPU(adata_ref, layer="log_normalized")
