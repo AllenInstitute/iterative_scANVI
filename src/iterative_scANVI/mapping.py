@@ -353,6 +353,18 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                         index=False,
                         header=False
                     )
+                    if save_latent_space == True:
+                        pd.DataFrame(adata.obs_names).to_csv(
+                            os.path.join(output_dir, "scVI_models", model_name, "obs_names.csv"),
+                            index=False,
+                            header=False
+                        )
+                        latent_space = label_model.get_latent_representation()
+                        np.save(
+                            file=os.path.join(output_dir, "scVI_models", model_name, "X_scVI.npy"),
+                            arr=latent_space
+                        )
+                        del latent_space
 
                 else:
                     markers = pd.read_csv(os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"), header=None)
@@ -496,6 +508,18 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                             index=False,
                             header=False
                         )
+                        if save_latent_space == True:
+                            pd.DataFrame(adata.obs_names).to_csv(
+                                os.path.join(output_dir, "scVI_models", model_name, "obs_names.csv"),
+                                index=False,
+                                header=False
+                            )
+                            latent_space = label_model.get_latent_representation()
+                            np.save(
+                                file=os.path.join(output_dir, "scVI_models", model_name, "X_scVI.npy"),
+                                arr=latent_space
+                            )
+                            del latent_space
 
                     else:
                         markers = pd.read_csv(os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"), header=None)
