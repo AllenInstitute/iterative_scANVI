@@ -380,7 +380,10 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 )
                 probabilities.to_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"))
                 
-                if save_latent_space == True:
+                if save_latent_space == True or plot_latent_space == True:
+                    if save_latent_space == False and plot_latent_space == True:
+                        warnings.warn("The scANVI model latent space is saved by default when plot_latent_space==True and save_latent_space==False.")
+                        
                     pd.DataFrame(adata.obs_names).to_csv(
                         os.path.join(output_dir, "scANVI_models", label_model_name, "obs_names.csv"),
                         index=False,
@@ -447,7 +450,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                         X=sp_sparse.csr_matrix(np.zeros((adata.obs.shape[0], 0))),
                         obs=adata.obs.copy(),
                     )
-                adata_min.obsm["X_scVI"] = label_model.get_latent_representation()
+                adata_min.obsm["X_scVI"] = np.load(os.path.join(output_dir, "scANVI_models", label_model_name, "X_scVI.npy"))
                 
                 try:
                     rsc.pp.neighbors(adata_min, use_rep="X_scVI")
@@ -538,7 +541,10 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                     except IndexError:
                         continue
 
-                    if save_latent_space == True:
+                    if save_latent_space == True or plot_latent_space == True:
+                        if save_latent_space == False and plot_latent_space == True:
+                            warnings.warn("The scANVI model latent space is saved by default when plot_latent_space==True and save_latent_space==False.")
+
                         pd.DataFrame(adata[cells, markers].obs_names).to_csv(
                             os.path.join(output_dir, "scANVI_models", label_model_name, "obs_names.csv"),
                             index=False,
@@ -606,8 +612,9 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                             X=sp_sparse.csr_matrix(np.zeros((adata.obs.loc[cells, :].shape[0], 0))),
                             obs=adata.obs.loc[cells, :].copy(),
                         )
-                    adata_min.obsm["X_scVI"] = label_model.get_latent_representation()
                     
+                    adata_min.obsm["X_scVI"] = np.load(os.path.join(output_dir, "scANVI_models", label_model_name, "X_scVI.npy"))
+
                     try:
                         rsc.pp.neighbors(adata_min, use_rep="X_scVI")
                         rsc.tl.umap(adata_min)
