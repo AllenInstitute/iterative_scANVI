@@ -359,7 +359,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                             index=False,
                             header=False
                         )
-                        latent_space = label_model.get_latent_representation()
+                        latent_space = model.get_latent_representation()
                         np.save(
                             file=os.path.join(output_dir, "scVI_models", model_name, "X_scVI.npy"),
                             arr=latent_space
@@ -517,7 +517,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                                 index=False,
                                 header=False
                             )
-                            latent_space = label_model.get_latent_representation()
+                            latent_space = model.get_latent_representation()
                             np.save(
                                 file=os.path.join(output_dir, "scVI_models", model_name, "X_scVI.npy"),
                                 arr=latent_space
