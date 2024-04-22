@@ -369,7 +369,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 else:
                     markers = pd.read_csv(os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"), header=None)
                     markers = markers[0].to_list()
-                    model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[:, markers])
+                    model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[:, markers].copy())
                 
                 label_model, probabilities = run_scANVI(adata[:, markers], model=model, **run_scANVI_kwargs)            
                 label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
@@ -383,7 +383,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 if save_latent_space == True or plot_latent_space == True:
                     if save_latent_space == False and plot_latent_space == True:
                         warnings.warn("The scANVI model latent space is saved by default when plot_latent_space==True and save_latent_space==False.")
-                        
+
                     pd.DataFrame(adata.obs_names).to_csv(
                         os.path.join(output_dir, "scANVI_models", label_model_name, "obs_names.csv"),
                         index=False,
@@ -527,7 +527,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                     else:
                         markers = pd.read_csv(os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"), header=None)
                         markers = markers[0].to_list()
-                        model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[cells, markers])
+                        model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[cells, markers].copy())
                     
                     try:
                         label_model, probabilities = run_scANVI(adata[cells, markers], model=model, **run_scANVI_kwargs)
