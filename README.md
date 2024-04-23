@@ -1,6 +1,13 @@
 # iterative_scANVI
 
 Install:
+(with conda to ensure proper pytorch and jaxlib libraries are used)
+```
+conda env create -f environment.yml
+conda activate iterative_scANVI
+```
+
+(with pip, untested)
 ```
 pip install git+ssh://git@github.com/AllenInstitute/iterative_scANVI.git
 ```
@@ -14,9 +21,8 @@ adata_ref = sc.read_h5ad("reference_adata.h5ad")
 adata_query = sc.read_h5ad("query_adata.h5ad")
 
 iterative_scANVI_kwargs = {
+    "batch_key": "source",
     "categorical_covariate_keys": ["donor_name"],
-    "continuous_covariate_keys": ["n_genes"],
-    "n_top_genes": [5000, 2000, 2000]
 }
 
 isc_mapping.iteratively_map(
