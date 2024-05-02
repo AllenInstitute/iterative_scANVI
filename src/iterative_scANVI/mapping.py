@@ -126,12 +126,14 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
         "user_genes": None,
         "max_epochs_scVI": 200,
         "max_epochs_scANVI": 20,
+        "scVI_model_args": {"n_layers": 2},
+        "scANVI_model_args": {"n_layers": 2},
+        "save_latent_space": False,
         "min_accuracy": 0.85,
         "plot_confusion": True,
         "plot_latent_space": False,
-        "save_latent_space": False,
-        "scVI_model_args": {"n_layers": 2},
-        "scANVI_model_args": {"n_layers": 2},
+        "add_vars_to_plot": None,
+
     }
     
     kwargs = {**default_kwargs, **kwargs}
@@ -149,12 +151,14 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     user_genes = kwargs["user_genes"]
     max_epochs_scVI = kwargs["max_epochs_scVI"]
     max_epochs_scANVI = kwargs["max_epochs_scANVI"]
+    scVI_model_args = kwargs["scVI_model_args"]
+    scANVI_model_args = kwargs["scANVI_model_args"]
+    save_latent_space = kwargs["save_latent_space"]
     min_accuracy = kwargs["min_accuracy"]
     plot_confusion = kwargs["plot_confusion"]
     plot_latent_space = kwargs["plot_latent_space"]
-    save_latent_space = kwargs["save_latent_space"]
-    scVI_model_args = kwargs["scVI_model_args"]
-    scANVI_model_args = kwargs["scANVI_model_args"]
+    add_vars_to_plot = kwargs["add_vars_to_plot"]
+
     
     if isinstance(adata_query, ad.AnnData) == False or isinstance(adata_ref, ad.AnnData) == False:
         raise TypeError("One or more of the AnnData objects have an incorrect type,")
@@ -236,7 +240,13 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     
     try:    
         if all([i in adata_query.obs.columns for i in continuous_covariate_keys]) == False or all([i in adata_ref.obs.columns for i in continuous_covariate_keys]) == False:
-            warnings.warn("One or more continuous covariates do not exist in both AnnData objects. This can be safely ignored if they are calculated later.")
+            raise KeyError("One or more continuous covariates do not exist in both AnnData objects.")
+    except:
+        pass
+
+    try:    
+        if all([i in adata_query.obs.columns for i in add_vars_to_plot]) == False or all([i in adata_ref.obs.columns for i in add_vars_to_plot]) == False:
+            raise KeyError("One or more additional variables to plot do not exist in both AnnData objects.")
     except:
         pass
                           
@@ -249,7 +259,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     print(str(datetime.now()) + " -- All validation steps completed.")
 
     query_vars = []
-    for i in [categorical_covariate_keys, continuous_covariate_keys, batch_key]:
+    for i in [categorical_covariate_keys, continuous_covariate_keys, batch_key, add_vars_to_plot]:
         if i != None:
             if isinstance(i, str) == True:
                 query_vars.append(i)
@@ -342,7 +352,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
             if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False:
                 
                 if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) == False:
-                    if user_genes is None:
+                    if user_genes == None:
                         markers = get_model_genes(adata_ref, **get_model_genes_kwargs)
                     else:
                         markers = user_genes[i]
@@ -469,6 +479,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                     sort_order=False,
                     frameon=False,
                     ncols=2,
+                    size = 1e6 / adata_min.shape[0]
                 )
                 del adata_min
                 
@@ -496,7 +507,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                     if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) == False:
                         ref_cells = adata_ref.obs[labels_keys[i - 1]] == k
 
-                        if user_genes is None:
+                        if user_genes == None:
                             markers = get_model_genes(adata_ref[ref_cells], **get_model_genes_kwargs)
                         else:
                             if isinstance(user_genes[i], dict):
@@ -576,7 +587,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 for l in confs:
                     adata.obs[l] = adata.obs[l].astype('float')
 
-                conf_mat = adata[cells].obs.groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
+                conf_mat = adata.obs.loc[cells, :].groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
 
                 if plot_confusion == True:
                     try:
