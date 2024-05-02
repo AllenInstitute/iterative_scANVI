@@ -479,7 +479,9 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                     sort_order=False,
                     frameon=False,
                     ncols=2,
-                    size = 1e6 / adata_min.shape[0]
+                    na_color="red",
+                    legend_loc="on data",
+                    size=np.min([5e5 / adata_min.shape[0], 100])
                 )
                 del adata_min
                 
@@ -587,7 +589,11 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 for l in confs:
                     adata.obs[l] = adata.obs[l].astype('float')
 
-                conf_mat = adata.obs.loc[cells, :].groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
+                try:
+                    conf_mat = adata.obs.loc[cells, :].groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
+                except:
+                    warnings.warn("Caught an error trying to compute the confusion matrix, printing the obs dataframe below. Does it look at expected?")
+                    print(adata.obs.loc[cells, :])
 
                 if plot_confusion == True:
                     try:
@@ -643,6 +649,9 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                         sort_order=False,
                         frameon=False,
                         ncols=2,
+                        na_color="red",
+                        legend_loc="on data",
+                        size=np.min([5e5 / adata_min.shape[0], 100])
                     )
                     del adata_min
                 
