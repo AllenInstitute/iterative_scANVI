@@ -476,6 +476,16 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                     legend_loc="on data",
                     size=np.min([5e5 / adata_min.shape[0], 100])
                 )
+                sc.pl.umap(
+                    adata_min,
+                    color=adata_min.obs.columns[adata_min.obs.columns.str.endswith("_scANVI")],
+                    sort_order=False,
+                    frameon=False,
+                    ncols=2,
+                    cmap="YlGnBu_r",
+                    legend_loc="on data",
+                    size=np.min([5e5 / adata_min.shape[0], 100])
+                )
                 del adata_min
                 
         else:
@@ -583,7 +593,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 for l in confs:
                     adata.obs[l] = adata.obs[l].astype('float')
 
-                conf_mat = adata.obs.loc[cells, :].groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
+                conf_mat = adata[cells].obs.groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
 
                 if plot_confusion == True:
                     try:
@@ -640,6 +650,16 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                         frameon=False,
                         ncols=2,
                         na_color="red",
+                        legend_loc="on data",
+                        size=np.min([5e5 / adata_min.shape[0], 100])
+                    )
+                    sc.pl.umap(
+                        adata_min,
+                        color=adata_min.obs.columns[adata_min.obs.columns.str.endswith("_scANVI")],
+                        sort_order=False,
+                        frameon=False,
+                        ncols=2,
+                        cmap="YlGnBu_r",
                         legend_loc="on data",
                         size=np.min([5e5 / adata_min.shape[0], 100])
                     )
