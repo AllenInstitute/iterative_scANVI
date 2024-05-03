@@ -413,13 +413,6 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
             probabilities = probabilities.dropna(axis=1, how='all')
             probabilities = probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1)
             tmp = pd.concat([adata.obs, probabilities], axis=1)
-            for l in [m for m in tmp.columns if m.endswith("_y")]:
-                l = l.replace("_y", "")
-                tmp[l + "_x"] = tmp[l + "_x"].astype("object")
-                tmp[l + "_y"] = tmp[l + "_y"].astype("object")
-                tmp[l] = tmp[l + "_y"].fillna(tmp[l + "_x"])
-                tmp[l] = tmp[l].astype("category")
-                tmp = tmp.drop([l + "_y", l + "_x"], axis=1)
 
             adata.obs = tmp.copy()
 
@@ -575,7 +568,8 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 
                 probabilities = probabilities.dropna(axis=1, how='all')
                 probabilities = probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1)
-                tmp = pd.concat([adata.obs, probabilities], axis=1)
+
+                tmp = pd.merge(adata.obs, probabilities, left_index=True, right_index=True, how="left")
                 for l in [m for m in tmp.columns if m.endswith("_y")]:
                     l = l.replace("_y", "")
                     tmp[l + "_x"] = tmp[l + "_x"].astype("object")
@@ -589,11 +583,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 for l in confs:
                     adata.obs[l] = adata.obs[l].astype('float')
 
-                try:
-                    conf_mat = adata.obs.loc[cells, :].groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
-                except:
-                    warnings.warn("Caught an error trying to compute the confusion matrix, printing the obs dataframe below. Does it look at expected?")
-                    print(adata.obs.loc[cells, :])
+                conf_mat = adata.obs.loc[cells, :].groupby([j, j + "_scANVI"]).size().unstack(fill_value=0)
 
                 if plot_confusion == True:
                     try:
@@ -712,19 +702,9 @@ def get_model_genes(adata_ref, **kwargs):
     
     if use_hvg == True:
         try:
-            try:
-                rsc.get.anndata_to_GPU(adata_ref, layer=layer)
-                rsc.pp.highly_variable_genes(adata_ref, flavor="seurat_v3", n_top_genes=n_top_genes, layer=layer)
-                rsc.get.anndata_to_CPU(adata_ref, layer=layer)
-            except:
-                rsc.get.anndata_to_GPU(adata_ref, layer="log_normalized")
-                rsc.pp.highly_variable_genes(adata_ref, min_mean=1, min_disp=0.5, max_mean=np.inf, layer="log_normalized")
-                rsc.get.anndata_to_CPU(adata_ref, layer="log_normalized")
+            sc.pp.highly_variable_genes(adata_ref, flavor="seurat_v3", n_top_genes=n_top_genes, layer=layer)
         except:
-            try:
-                sc.pp.highly_variable_genes(adata_ref, flavor="seurat_v3", n_top_genes=n_top_genes, layer=layer)
-            except:
-                sc.pp.highly_variable_genes(adata_ref, min_mean=1, min_disp=0.5, max_mean=np.inf, layer="log_normalized")
+            sc.pp.highly_variable_genes(adata_ref, min_mean=1, min_disp=0.5, max_mean=np.inf, layer="log_normalized")
 
         markers = adata_ref.var[adata_ref.var.highly_variable == True].index.to_list()
         
