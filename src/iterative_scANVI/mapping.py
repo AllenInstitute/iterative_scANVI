@@ -478,7 +478,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 )
                 sc.pl.umap(
                     adata_min,
-                    color=adata_min.obs.columns[adata_min.obs.columns.str.endswith("_scANVI")],
+                    color=[j + "_scANVI", j + "_conf_scANVI"],
                     sort_order=False,
                     frameon=False,
                     ncols=2,
@@ -506,7 +506,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 adata.obs.loc[(adata.obs[labels_keys[i - 1]] != adata.obs[labels_keys[i - 1] + "_scANVI"]) & (cells), j] = "Unknown"
                 adata.obs[labels_keys[i - 1]] = adata.obs[labels_keys[i - 1]].astype("category")
                 adata.obs[labels_keys[i - 1] + "_scANVI"] = adata.obs[labels_keys[i - 1] + "_scANVI"].astype("category")
-                
+
                 if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False:
 
                     if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) == False:
@@ -546,6 +546,15 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                         model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[cells, markers].copy())
                     
                     try:
+                        ref_types = np.setdiff1d(adata[cells].obs[j].unqiue(), "Unknown")
+                        if len(ref_types) < 2:
+                            warnings.warn("Adding a random cell type category because only one reference cell type exists")
+                            ref_type = ref_types[0]
+                            ref_cells = adata_ref.obs[labels_keys[i - 1]] == k
+                            random_ref_cell = random.sample(adata.obs_names[ref_cells].to_list(), k=1)
+                            adata.obs[j] = adata.obs[j].cat.add_categories(["Random"])
+                            adata.obs.loc[random_ref_cell, j] = "Random"
+
                         label_model, probabilities = run_scANVI(adata[cells, markers], model=model, **run_scANVI_kwargs)
                         label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
                         pd.DataFrame(markers).to_csv(
@@ -553,6 +562,15 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                             index=False,
                             header=False
                         )
+
+                        if len(ref_types) < 2:
+                            adata.obs.loc[adata.obs[j] == "Random", j] = ref_type
+                            probabilities.loc[probabilities[j + "_scANVI"] == "Random", j + "_scANVI"] = ref_type
+                            probabilities.loc[:, j + "_conf_scANVI"] = 1
+                            probabilities.loc[:, ref_type] = 1
+                            probabilities = probabilities.drop(["Random"], axis=1)
+                            adata.obs[j] = adata.obs[j].cat.remove_unused_categories()
+
                         probabilities.to_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"))
                     except IndexError:
                         continue
@@ -655,7 +673,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                     )
                     sc.pl.umap(
                         adata_min,
-                        color=adata_min.obs.columns[adata_min.obs.columns.str.endswith("_scANVI")],
+                        color=[j + "_scANVI", j + "_conf_scANVI"],
                         sort_order=False,
                         frameon=False,
                         ncols=2,
