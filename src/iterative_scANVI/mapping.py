@@ -546,7 +546,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                         model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[cells, markers].copy())
                     
                     try:
-                        ref_types = np.setdiff1d(adata[cells].obs[j].unqiue(), "Unknown")
+                        ref_types = np.setdiff1d(adata[cells].obs[j].unique(), "Unknown")
                         if len(ref_types) < 2:
                             warnings.warn("Adding a random cell type category because only one reference cell type exists")
                             ref_type = ref_types[0]
