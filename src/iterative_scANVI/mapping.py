@@ -551,7 +551,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                         warnings.warn("Adding a random cell type category because only one reference cell type exists")
                         ref_type = ref_types[0]
                         ref_cells = adata_ref.obs[labels_keys[i - 1]] == k
-                        random_ref_cell = random.sample(adata.obs_names[ref_cells].to_list(), k=1)
+                        random_ref_cell = random.sample(adata_ref.obs_names[ref_cells].to_list(), k=1)
                         adata.obs[j] = adata.obs[j].cat.add_categories(["Random"])
                         adata.obs.loc[random_ref_cell, j] = "Random"
 
