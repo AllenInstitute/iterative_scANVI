@@ -545,7 +545,6 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                         markers = markers[0].to_list()
                         model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[cells, markers].copy())
                     
-                    #try:
                     ref_types = np.setdiff1d(adata[cells].obs[j].unique(), "Unknown")
                     if len(ref_types) < 2:
                         warnings.warn("Adding a random cell type category because only one reference cell type exists")
@@ -572,8 +571,6 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                         adata.obs[j] = adata.obs[j].cat.remove_unused_categories()
 
                     probabilities.to_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"))
-                    #except IndexError:
-                    #    continue
 
                     if save_latent_space == True or plot_latent_space == True:
                         if save_latent_space == False and plot_latent_space == True:
