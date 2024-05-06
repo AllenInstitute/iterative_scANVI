@@ -545,35 +545,35 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                         markers = markers[0].to_list()
                         model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[cells, markers].copy())
                     
-                    try:
-                        ref_types = np.setdiff1d(adata[cells].obs[j].unique(), "Unknown")
-                        if len(ref_types) < 2:
-                            warnings.warn("Adding a random cell type category because only one reference cell type exists")
-                            ref_type = ref_types[0]
-                            ref_cells = adata_ref.obs[labels_keys[i - 1]] == k
-                            random_ref_cell = random.sample(adata.obs_names[ref_cells].to_list(), k=1)
-                            adata.obs[j] = adata.obs[j].cat.add_categories(["Random"])
-                            adata.obs.loc[random_ref_cell, j] = "Random"
+                    #try:
+                    ref_types = np.setdiff1d(adata[cells].obs[j].unique(), "Unknown")
+                    if len(ref_types) < 2:
+                        warnings.warn("Adding a random cell type category because only one reference cell type exists")
+                        ref_type = ref_types[0]
+                        ref_cells = adata_ref.obs[labels_keys[i - 1]] == k
+                        random_ref_cell = random.sample(adata.obs_names[ref_cells].to_list(), k=1)
+                        adata.obs[j] = adata.obs[j].cat.add_categories(["Random"])
+                        adata.obs.loc[random_ref_cell, j] = "Random"
 
-                        label_model, probabilities = run_scANVI(adata[cells, markers], model=model, **run_scANVI_kwargs)
-                        label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
-                        pd.DataFrame(markers).to_csv(
-                            os.path.join(output_dir, "scANVI_models", label_model_name, "var_names.csv"),
-                            index=False,
-                            header=False
-                        )
+                    label_model, probabilities = run_scANVI(adata[cells, markers], model=model, **run_scANVI_kwargs)
+                    label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
+                    pd.DataFrame(markers).to_csv(
+                        os.path.join(output_dir, "scANVI_models", label_model_name, "var_names.csv"),
+                        index=False,
+                        header=False
+                    )
 
-                        if len(ref_types) < 2:
-                            adata.obs.loc[adata.obs[j] == "Random", j] = ref_type
-                            probabilities.loc[probabilities[j + "_scANVI"] == "Random", j + "_scANVI"] = ref_type
-                            probabilities.loc[:, j + "_conf_scANVI"] = 1
-                            probabilities.loc[:, ref_type] = 1
-                            probabilities = probabilities.drop(["Random"], axis=1)
-                            adata.obs[j] = adata.obs[j].cat.remove_unused_categories()
+                    if len(ref_types) < 2:
+                        adata.obs.loc[adata.obs[j] == "Random", j] = ref_type
+                        probabilities.loc[probabilities[j + "_scANVI"] == "Random", j + "_scANVI"] = ref_type
+                        probabilities.loc[:, j + "_conf_scANVI"] = 1
+                        probabilities.loc[:, ref_type] = 1
+                        probabilities = probabilities.drop(["Random"], axis=1)
+                        adata.obs[j] = adata.obs[j].cat.remove_unused_categories()
 
-                        probabilities.to_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"))
-                    except IndexError:
-                        continue
+                    probabilities.to_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"))
+                    #except IndexError:
+                    #    continue
 
                     if save_latent_space == True or plot_latent_space == True:
                         if save_latent_space == False and plot_latent_space == True:
