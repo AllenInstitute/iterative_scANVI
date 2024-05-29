@@ -267,9 +267,13 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
                 query_vars.extend(i)
 
     adata_query.obs = adata_query.obs.loc[:, query_vars].copy()
+    adata_query.obs["Reference Cell"] = False
 
     ref_vars = query_vars + labels_keys
     adata_ref.obs = adata_ref.obs.loc[:, ref_vars].copy()
+    adata_ref.obs["Reference Cell"] = True
+
+    ref_vars = ref_vars + ["Reference Cell"]
 
     adata = ad.concat([adata_query, adata_ref], join="outer", merge="unique")
     del adata_query
@@ -1129,7 +1133,8 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, d
                         batch_key=model_args["batch_key"],
                         categorical_covariate_keys=model_args["categorical_covariate_keys"],
                         continuous_covariate_keys=model_args["continuous_covariate_keys"],
-                        labels_key=groupby
+                        labels_key=groupby,
+                        unlabeled_category="Unknown",
                     )
 
                     label_model = scvi.model.SCANVI.load(os.path.join(output_dir, "scANVI_models", label_model_name), sub_markers_only)
