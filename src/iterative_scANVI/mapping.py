@@ -956,7 +956,27 @@ save_anndata(
 '''
 
 def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, diagnostic_plots=None, model_args={}, **kwargs):
-        
+    
+    default_model_args = {
+        "layer": None,
+        "batch_key": None,
+        "categorical_covariate_keys": None,
+        "continuous_covariate_keys": None,
+        "use_hvg": True,
+        "use_de": True,
+        "n_top_genes": 2000,
+        "n_downsample_ref": 1000,
+        "min_ref_cells": 15,
+        "n_ref_genes": 500,
+        "max_epochs_scVI": 200,
+        "max_epochs_scANVI": 20,
+        "scVI_model_args": {"n_layers": 2},
+        "scANVI_model_args": {"n_layers": 2},
+        "user_genes": None
+    }
+
+    model_args = {**default_model_args, **model_args}
+
     default_kwargs = {
         "n_cores": 1,
         "normalize_data": False,
