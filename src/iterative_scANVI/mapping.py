@@ -163,7 +163,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     if isinstance(adata_query, ad.AnnData) == False or isinstance(adata_ref, ad.AnnData) == False:
         raise TypeError("One or more of the AnnData objects have an incorrect type,")
 
-    if adata_query.shape[1] != adata_ref.shape[1] or all(adata_query.var_names != adata_ref.var_names) != True:
+    if adata_query.shape[1] != adata_ref.shape[1] or any(adata_query.var_names != adata_ref.var_names) == True:
         common_labels = np.intersect1d(adata_query.var_names, adata_ref.var_names)
         
         if len(common_labels) == 0:
