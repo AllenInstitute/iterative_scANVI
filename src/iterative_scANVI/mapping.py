@@ -281,7 +281,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, merged=Fals
         del adata_query
 
         adata.obs_names = [str(i) for i in adata.obs_names]
-        adata.ref = [str(i) for i in adata_ref.obs_names]
+        adata_ref.obs_names = [str(i) for i in adata_ref.obs_names]
 
         try:
             iter(min_ref_cells)
@@ -303,7 +303,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, merged=Fals
         for i in adata_ref.obs[labels_keys[-1]].cat.categories:
             tmp_cells = adata_ref[adata_ref.obs[labels_keys[-1]] == i].obs_names.to_list()
             
-            if len(tmp_cells) > n_downsample_ref:
+            if len(tmp_cells) > _n_downsample_ref:
                 cells = cells + random.sample(tmp_cells, k=_n_downsample_ref)
 
             else:
