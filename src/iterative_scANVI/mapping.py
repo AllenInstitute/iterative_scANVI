@@ -110,7 +110,7 @@ iteratively_map(
 
 '''
 
-def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
+def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, merged=False, skipchecks=False, **kwargs):
     
     default_kwargs = {
         "layer": None,
@@ -159,155 +159,160 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, **kwargs):
     plot_latent_space = kwargs["plot_latent_space"]
     add_vars_to_plot = kwargs["add_vars_to_plot"]
 
-    
-    if isinstance(adata_query, ad.AnnData) == False or isinstance(adata_ref, ad.AnnData) == False:
-        raise TypeError("One or more of the AnnData objects have an incorrect type,")
+    if skipchecks == False:
+        if isinstance(adata_query, ad.AnnData) == False or isinstance(adata_ref, ad.AnnData) == False:
+            raise TypeError("One or more of the AnnData objects have an incorrect type,")
 
-    if adata_query.shape[1] != adata_ref.shape[1] or any(adata_query.var_names != adata_ref.var_names) == True:
-        common_labels = np.intersect1d(adata_query.var_names, adata_ref.var_names)
+        if adata_query.shape[1] != adata_ref.shape[1] or any(adata_query.var_names != adata_ref.var_names) == True:
+            common_labels = np.intersect1d(adata_query.var_names, adata_ref.var_names)
+            
+            if len(common_labels) == 0:
+                raise IndexError("Reference and query AnnData objects have different shapes and no overlapping var_names.")
+            adata_ref = adata_ref[:, common_labels].copy()
+            adata_query = adata_query[:, common_labels].copy()
+            warnings.warn("Reference and query AnnData objects have different shapes, using " + str(len(common_labels)) + " common var_names. This may have a deterimental effect on model performance.")
+
+        if len(labels_keys) == 0:
+            raise ValueError("You must specify at least 1 label to map to.")
+
+        if isinstance(labels_keys, list) == False:
+            raise TypeError("labels_keys must be a list.")
+            
+        if all([i in adata_ref.obs.columns for i in labels_keys]) == False:
+            raise KeyError("One or more labels_keys do not exist in the reference AnnData object.")
+
+        for i in labels_keys:
+            adata_ref.obs[i] = adata_ref.obs[i].astype("category")
+            if batch_key != None:
+                if len(np.intersect1d(adata_ref.obs[i].cat.categories, batch_key)) > 0:
+                    raise ValueError("The batch key cannot also be the name of a value in any labels_key.")
+
+            if categorical_covariate_keys != None:
+                if len(np.intersect1d(adata_ref.obs[i].cat.categories, categorical_covariate_keys)) > 0:
+                    raise ValueError("The categorical_covariate_keys cannot also be the name of a value in any labels_key.")
+
+            if continuous_covariate_keys != None:
+                if len(np.intersect1d(adata_ref.obs[i].cat.categories, continuous_covariate_keys)) > 0:
+                    raise ValueError("The continuous_covariate_keys cannot also be the name of a value in any labels_key.")
         
-        if len(common_labels) == 0:
-            raise IndexError("Reference and query AnnData objects have different shapes and no overlapping var_names.")
-        adata_ref = adata_ref[:, common_labels].copy()
-        adata_query = adata_query[:, common_labels].copy()
-        warnings.warn("Reference and query AnnData objects have different shapes, using " + str(len(common_labels)) + " common var_names. This may have a deterimental effect on model performance.")
+        if layer != None:
+            if layer not in adata_query.layers.keys() or layer not in adata_ref.layers.keys():
+                raise KeyError("Layer " + layer + " does not exist in both AnnData objects.")
+            
+            if isinstance(adata_query.layers[layer], sp_sparse.csr_matrix) == False:
+                adata_query.layers[layer] = sp_sparse.csr_matrix(adata_query.layers[layer])
+                warnings.warn("Counts matrix in the query anndata was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
 
-    if len(labels_keys) == 0:
-        raise ValueError("You must specify at least 1 label to map to.")
+            if isinstance(adata_ref.layers[layer], sp_sparse.csr_matrix) == False:
+                adata_ref.layers[layer] = sp_sparse.csr_matrix(adata_ref.layers[layer])
+                warnings.warn("Counts matrix in the reference anndata was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
 
-    if isinstance(labels_keys, list) == False:
-        raise TypeError("labels_keys must be a list.")
+            if len(adata_query.layers[layer].data) == 0 or len(adata_ref.layers[layer].data) == 0:
+                raise ValueError("There are no non-zero values in one of the anndata counts matrices.")
+            
+            if all([i.is_integer() for i in adata_query.layers[layer].data]) == False or all([i.is_integer() for i in adata_ref.layers[layer].data]) == False:
+                raise TypeError("One of the anndata counts matrices has non-integer values. This is often caused by data normalization. scVI and scANVI require the raw count matrix.")
         
-    if all([i in adata_ref.obs.columns for i in labels_keys]) == False:
-        raise KeyError("One or more labels_keys do not exist in the reference AnnData object.")
+       
+        else:
+            if isinstance(adata_query.X, sp_sparse.csr_matrix) == False:
+                adata_query.X = sp_sparse.csr_matrix(adata_query.X)
+                warnings.warn("Counts matrix was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
 
-    for i in labels_keys:
-        adata_ref.obs[i] = adata_ref.obs[i].astype("category")
+            if isinstance(adata_ref.X, sp_sparse.csr_matrix) == False:
+                adata_ref.X = sp_sparse.csr_matrix(adata_ref.X)
+                warnings.warn("Counts matrix was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
+
+            if len(adata_query.X.data) == 0 or len(adata_ref.X.data) == 0:
+                raise ValueError("There are no non-zero values in one of the anndata counts matrices.")
+            
+            if all([i.is_integer() for i in adata_query.X.data]) == False or all([i.is_integer() for i in adata_ref.X.data]) == False:
+                raise TypeError("One of the anndata counts matrices has non-integer values. This is often caused by data normalization. scVI and scANVI require the raw count matrix.")
+            
         if batch_key != None:
-            if len(np.intersect1d(adata_ref.obs[i].cat.categories, batch_key)) > 0:
-                raise ValueError("The batch key cannot also be the name of a value in any labels_key.")
-
-        if categorical_covariate_keys != None:
-            if len(np.intersect1d(adata_ref.obs[i].cat.categories, categorical_covariate_keys)) > 0:
-                raise ValueError("The categorical_covariate_keys cannot also be the name of a value in any labels_key.")
-
-        if continuous_covariate_keys != None:
-            if len(np.intersect1d(adata_ref.obs[i].cat.categories, continuous_covariate_keys)) > 0:
-                raise ValueError("The continuous_covariate_keys cannot also be the name of a value in any labels_key.")
-    
-    if layer != None:
-        if layer not in adata_query.layers.keys() or layer not in adata_ref.layers.keys():
-            raise KeyError("Layer " + layer + " does not exist in both AnnData objects.")
+            if batch_key not in adata_query.obs.columns or batch_key not in adata_ref.obs.columns:
+                raise KeyError("Batch key != in both AnnData objects.")
+        try:
+            if all([i in adata_query.obs.columns for i in categorical_covariate_keys]) == False or all([i in adata_ref.obs.columns for i in categorical_covariate_keys]) == False:
+                raise KeyError("One or more categorical covariates do not exist in both AnnData objects.")
+        except:
+            pass
         
-        if isinstance(adata_query.layers[layer], sp_sparse.csr_matrix) == False:
-            adata_query.layers[layer] = sp_sparse.csr_matrix(adata_query.layers[layer])
-            warnings.warn("Counts matrix in the query anndata was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
+        try:    
+            if all([i in adata_query.obs.columns for i in continuous_covariate_keys]) == False or all([i in adata_ref.obs.columns for i in continuous_covariate_keys]) == False:
+                raise KeyError("One or more continuous covariates do not exist in both AnnData objects.")
+        except:
+            pass
 
-        if isinstance(adata_ref.layers[layer], sp_sparse.csr_matrix) == False:
-            adata_ref.layers[layer] = sp_sparse.csr_matrix(adata_ref.layers[layer])
-            warnings.warn("Counts matrix in the reference anndata was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
-
-        if len(adata_query.layers[layer].data) == 0 or len(adata_ref.layers[layer].data) == 0:
-            raise ValueError("There are no non-zero values in one of the anndata counts matrices.")
+        try:    
+            if all([i in adata_query.obs.columns for i in add_vars_to_plot]) == False or all([i in adata_ref.obs.columns for i in add_vars_to_plot]) == False:
+                raise KeyError("One or more additional variables to plot do not exist in both AnnData objects.")
+        except:
+            pass
+                              
+        for i in [use_hvg, use_de, n_top_genes, n_downsample_ref, min_ref_cells, n_ref_genes, user_genes, max_epochs_scVI, max_epochs_scANVI]:
+            if isinstance(i, bool) or isinstance(i, str) or isinstance(i, int) or i is None:
+                i = [i]
+            if len(i) != 1 and len(i) != len(labels_keys):
+                raise ValueError(str(i) + " should be either a single value used in each iteration or a list of values of equal length to labels_keys.")
         
-        if all([i.is_integer() for i in adata_query.layers[layer].data]) == False or all([i.is_integer() for i in adata_ref.layers[layer].data]) == False:
-            raise TypeError("One of the anndata counts matrices has non-integer values. This is often caused by data normalization. scVI and scANVI require the raw count matrix.")
-    
-   
-    else:
-        if isinstance(adata_query.X, sp_sparse.csr_matrix) == False:
-            adata_query.X = sp_sparse.csr_matrix(adata_query.X)
-            warnings.warn("Counts matrix was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
-
-        if isinstance(adata_ref.X, sp_sparse.csr_matrix) == False:
-            adata_ref.X = sp_sparse.csr_matrix(adata_ref.X)
-            warnings.warn("Counts matrix was stored as a dense matrix, converting to scipy.sparse.csr_matrix.")
-
-        if len(adata_query.X.data) == 0 or len(adata_ref.X.data) == 0:
-            raise ValueError("There are no non-zero values in one of the anndata counts matrices.")
-        
-        if all([i.is_integer() for i in adata_query.X.data]) == False or all([i.is_integer() for i in adata_ref.X.data]) == False:
-            raise TypeError("One of the anndata counts matrices has non-integer values. This is often caused by data normalization. scVI and scANVI require the raw count matrix.")
-        
-    if batch_key != None:
-        if batch_key not in adata_query.obs.columns or batch_key not in adata_ref.obs.columns:
-            raise KeyError("Batch key != in both AnnData objects.")
-    try:
-        if all([i in adata_query.obs.columns for i in categorical_covariate_keys]) == False or all([i in adata_ref.obs.columns for i in categorical_covariate_keys]) == False:
-            raise KeyError("One or more categorical covariates do not exist in both AnnData objects.")
-    except:
-        pass
-    
-    try:    
-        if all([i in adata_query.obs.columns for i in continuous_covariate_keys]) == False or all([i in adata_ref.obs.columns for i in continuous_covariate_keys]) == False:
-            raise KeyError("One or more continuous covariates do not exist in both AnnData objects.")
-    except:
-        pass
-
-    try:    
-        if all([i in adata_query.obs.columns for i in add_vars_to_plot]) == False or all([i in adata_ref.obs.columns for i in add_vars_to_plot]) == False:
-            raise KeyError("One or more additional variables to plot do not exist in both AnnData objects.")
-    except:
-        pass
-                          
-    for i in [use_hvg, use_de, n_top_genes, n_downsample_ref, min_ref_cells, n_ref_genes, user_genes, max_epochs_scVI, max_epochs_scANVI]:
-        if isinstance(i, bool) or isinstance(i, str) or isinstance(i, int) or i is None:
-            i = [i]
-        if len(i) != 1 and len(i) != len(labels_keys):
-            raise ValueError(str(i) + " should be either a single value used in each iteration or a list of values of equal length to labels_keys.")
-    
     print(str(datetime.now()) + " -- All validation steps completed.")
 
-    query_vars = []
-    for i in [categorical_covariate_keys, continuous_covariate_keys, batch_key, add_vars_to_plot]:
-        if i != None:
-            if isinstance(i, str) == True:
-                query_vars.append(i)
-            else:
-                query_vars.extend(i)
+    if merged == False:
 
-    adata_query.obs = adata_query.obs.loc[:, query_vars].copy()
-    adata_query.obs["Reference Cell"] = False
+        query_vars = []
+        for i in [categorical_covariate_keys, continuous_covariate_keys, batch_key, add_vars_to_plot]:
+            if i != None:
+                if isinstance(i, str) == True:
+                    query_vars.append(i)
+                else:
+                    query_vars.extend(i)
 
-    ref_vars = query_vars + labels_keys
-    adata_ref.obs = adata_ref.obs.loc[:, ref_vars].copy()
-    adata_ref.obs["Reference Cell"] = True
+        adata_query.obs = adata_query.obs.loc[:, query_vars].copy()
+        adata_query.obs["Reference Cell"] = False
 
-    ref_vars = ref_vars + ["Reference Cell"]
+        ref_vars = query_vars + labels_keys
+        adata_ref.obs = adata_ref.obs.loc[:, ref_vars].copy()
+        adata_ref.obs["Reference Cell"] = True
 
-    adata = ad.concat([adata_query, adata_ref], join="outer", merge="unique")
-    del adata_query
+        ref_vars = ref_vars + ["Reference Cell"]
 
-    adata.obs_names = [str(i) for i in adata.obs_names]
-    adata.ref = [str(i) for i in adata_ref.obs_names]
+        adata = ad.concat([adata_query, adata_ref], join="outer", merge="unique")
+        del adata_query
 
-    try:
-        iter(min_ref_cells)
-        _min_ref_cells = min_ref_cells[-1]
-    except:
-        _min_ref_cells = min_ref_cells
+        adata.obs_names = [str(i) for i in adata.obs_names]
+        adata.ref = [str(i) for i in adata_ref.obs_names]
 
-    try:
-        iter(n_downsample_ref)
-        _n_downsample_ref = n_downsample_ref[-1]
-    except:
-        _n_downsample_ref = n_downsample_ref
+        try:
+            iter(min_ref_cells)
+            _min_ref_cells = min_ref_cells[-1]
+        except:
+            _min_ref_cells = min_ref_cells
+
+        try:
+            iter(n_downsample_ref)
+            _n_downsample_ref = n_downsample_ref[-1]
+        except:
+            _n_downsample_ref = n_downsample_ref
 
 
-    ref_counts = adata_ref.obs[labels_keys[-1]].value_counts()
-    adata_ref = adata_ref[~(adata_ref.obs[labels_keys[-1]].isin(ref_counts[ref_counts < _min_ref_cells].index))]
+        ref_counts = adata_ref.obs[labels_keys[-1]].value_counts()
+        adata_ref = adata_ref[~(adata_ref.obs[labels_keys[-1]].isin(ref_counts[ref_counts < _min_ref_cells].index))]
+                
+        cells = []
+        for i in adata_ref.obs[labels_keys[-1]].cat.categories:
+            tmp_cells = adata_ref[adata_ref.obs[labels_keys[-1]] == i].obs_names.to_list()
             
-    cells = []
-    for i in adata_ref.obs[labels_keys[-1]].cat.categories:
-        tmp_cells = adata_ref[adata_ref.obs[labels_keys[-1]] == i].obs_names.to_list()
-        
-        if len(tmp_cells) > n_downsample_ref:
-            cells = cells + random.sample(tmp_cells, k=_n_downsample_ref)
+            if len(tmp_cells) > n_downsample_ref:
+                cells = cells + random.sample(tmp_cells, k=_n_downsample_ref)
 
-        else:
-            cells.extend(tmp_cells)
+            else:
+                cells.extend(tmp_cells)
 
-    adata_ref = adata_ref[cells].copy()
+        adata_ref = adata_ref[cells].copy()
+
+    else:
+        adata = adata_query
 
     print(str(datetime.now()) + " -- Finished creating merged and downsampled AnnData objects.") 
     
