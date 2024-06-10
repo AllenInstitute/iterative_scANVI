@@ -110,7 +110,7 @@ iteratively_map(
 
 '''
 
-def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, merged=False, skipchecks=False, **kwargs):
+def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=False, merged=False, **kwargs):
     
     default_kwargs = {
         "layer": None,
