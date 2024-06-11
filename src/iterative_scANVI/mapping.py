@@ -258,20 +258,24 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
         
     print(str(datetime.now()) + " -- All validation steps completed.")
 
+
+    query_vars = []
+    for i in [categorical_covariate_keys, continuous_covariate_keys, batch_key, add_vars_to_plot]:
+        if i != None:
+            if isinstance(i, str) == True:
+                query_vars.append(i)
+            else:
+                query_vars.extend(i)
+
+    ref_vars = query_vars + labels_keys
+
     if merged == False:
 
-        query_vars = []
-        for i in [categorical_covariate_keys, continuous_covariate_keys, batch_key, add_vars_to_plot]:
-            if i != None:
-                if isinstance(i, str) == True:
-                    query_vars.append(i)
-                else:
-                    query_vars.extend(i)
+
 
         adata_query.obs = adata_query.obs.loc[:, query_vars].copy()
         adata_query.obs["Reference Cell"] = False
 
-        ref_vars = query_vars + labels_keys
         adata_ref.obs = adata_ref.obs.loc[:, ref_vars].copy()
         adata_ref.obs["Reference Cell"] = True
 
