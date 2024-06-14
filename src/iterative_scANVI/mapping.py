@@ -318,6 +318,9 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
     else:
         adata = adata_query
 
+        ref_vars = ref_vars + ["Reference Cell"]
+
+
     print(str(datetime.now()) + " -- Finished creating merged and downsampled AnnData objects.") 
     
     
