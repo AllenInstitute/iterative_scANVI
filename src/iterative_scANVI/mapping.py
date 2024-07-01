@@ -133,6 +133,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
         "plot_confusion": True,
         "plot_latent_space": False,
         "add_vars_to_plot": None,
+        "run_inference": False,
 
     }
     
@@ -271,8 +272,6 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
 
     if merged == False:
 
-
-
         adata_query.obs = adata_query.obs.loc[:, query_vars].copy()
         adata_query.obs["Reference Cell"] = False
 
@@ -365,7 +364,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
             model_name = hashlib.md5(str(json.dumps({**get_model_genes_kwargs, **run_scVI_kwargs})).replace("/", " ").encode()).hexdigest()
             label_model_name = hashlib.md5(str(json.dumps({**get_model_genes_kwargs, **run_scANVI_kwargs})).replace("/", " ").encode()).hexdigest()
 
-            if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False:
+            if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False or run_inference == True:
                 
                 if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) == False:
                     if user_genes == None:
@@ -379,31 +378,40 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                         index=False,
                         header=False
                     )
-                    if save_latent_space == True:
-                        pd.DataFrame(adata.obs_names).to_csv(
-                            os.path.join(output_dir, "scVI_models", model_name, "obs_names.csv"),
-                            index=False,
-                            header=False
-                        )
-                        latent_space = model.get_latent_representation()
-                        np.save(
-                            file=os.path.join(output_dir, "scVI_models", model_name, "X_scVI.npy"),
-                            arr=latent_space
-                        )
-                        del latent_space
 
                 else:
                     markers = pd.read_csv(os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"), header=None)
                     markers = markers[0].to_list()
                     model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[:, markers].copy())
                 
-                label_model, probabilities = run_scANVI(adata[:, markers], model=model, **run_scANVI_kwargs)            
-                label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
-                pd.DataFrame(markers).to_csv(
-                    os.path.join(output_dir, "scANVI_models", label_model_name, "var_names.csv"),
-                    index=False,
-                    header=False
-                )
+                if save_latent_space == True:
+                    pd.DataFrame(adata.obs_names).to_csv(
+                        os.path.join(output_dir, "scVI_models", model_name, "obs_names.csv"),
+                        index=False,
+                        header=False
+                    )
+                    latent_space = model.get_latent_representation()
+                    np.save(
+                        file=os.path.join(output_dir, "scVI_models", model_name, "X_scVI.npy"),
+                        arr=latent_space
+                    )
+                    del latent_space
+                
+                if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False:
+                    label_model, probabilities = run_scANVI(adata[:, markers], model=model, **run_scANVI_kwargs)
+                    label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
+                    pd.DataFrame(markers).to_csv(
+                        os.path.join(output_dir, "scANVI_models", label_model_name, "var_names.csv"),
+                        index=False,
+                        header=False
+                    )
+                else:
+                    label_model, probabilities = query_scANVI(
+                        adata[:, markers],
+                        model_dir=os.path.join(output_dir, "scANVI_models", label_model_name),
+                        **run_scANVI_kwargs
+                    )
+
                 probabilities.to_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"))
                 
                 if save_latent_space == True or plot_latent_space == True:
@@ -425,7 +433,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                     
             else:
                 probabilities = pd.read_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"), index_col=0)
-            
+
             probabilities = probabilities.dropna(axis=1, how='all')
             probabilities = probabilities.drop([l for l in probabilities.columns if l.startswith("_")], axis=1)
             tmp = pd.concat([adata.obs, probabilities], axis=1)
@@ -523,7 +531,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                 adata.obs[labels_keys[i - 1]] = adata.obs[labels_keys[i - 1]].astype("category")
                 adata.obs[labels_keys[i - 1] + "_scANVI"] = adata.obs[labels_keys[i - 1] + "_scANVI"].astype("category")
 
-                if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False:
+                if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False or run_inference == True:
 
                     if os.path.exists(os.path.join(output_dir, "scVI_models", model_name)) == False:
                         ref_cells = adata_ref.obs[labels_keys[i - 1]] == k
@@ -543,24 +551,25 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                             index=False,
                             header=False
                         )
-                        if save_latent_space == True:
-                            pd.DataFrame(adata.obs_names).to_csv(
-                                os.path.join(output_dir, "scVI_models", model_name, "obs_names.csv"),
-                                index=False,
-                                header=False
-                            )
-                            latent_space = model.get_latent_representation()
-                            np.save(
-                                file=os.path.join(output_dir, "scVI_models", model_name, "X_scVI.npy"),
-                                arr=latent_space
-                            )
-                            del latent_space
 
                     else:
                         markers = pd.read_csv(os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"), header=None)
                         markers = markers[0].to_list()
                         model = scvi.model.SCVI.load(os.path.join(output_dir, "scVI_models", model_name), adata[cells, markers].copy())
                     
+                    if save_latent_space == True:
+                        pd.DataFrame(adata.obs_names).to_csv(
+                            os.path.join(output_dir, "scVI_models", model_name, "obs_names.csv"),
+                            index=False,
+                            header=False
+                        )
+                        latent_space = model.get_latent_representation()
+                        np.save(
+                            file=os.path.join(output_dir, "scVI_models", model_name, "X_scVI.npy"),
+                            arr=latent_space
+                        )
+                        del latent_space
+
                     ref_types = np.setdiff1d(adata[cells].obs[j].unique(), "Unknown")
                     if len(ref_types) < 2:
                         warnings.warn("Adding a random cell type category because only one reference cell type exists")
@@ -570,13 +579,20 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                         adata.obs[j] = adata.obs[j].cat.add_categories(["Random"])
                         adata.obs.loc[random_ref_cell, j] = "Random"
 
-                    label_model, probabilities = run_scANVI(adata[cells, markers], model=model, **run_scANVI_kwargs)
-                    label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
-                    pd.DataFrame(markers).to_csv(
-                        os.path.join(output_dir, "scANVI_models", label_model_name, "var_names.csv"),
-                        index=False,
-                        header=False
-                    )
+                    if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False
+                        label_model, probabilities = run_scANVI(adata[cells, markers], model=model, **run_scANVI_kwargs)
+                        label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
+                        pd.DataFrame(markers).to_csv(
+                            os.path.join(output_dir, "scANVI_models", label_model_name, "var_names.csv"),
+                            index=False,
+                            header=False
+                        )
+                    else:
+                        label_model, probabilities = query_scANVI(
+                            adata[cells, markers],
+                            model_dir=os.path.join(output_dir, "scANVI_models", label_model_name),
+                            **run_scANVI_kwargs
+                        )
 
                     if len(ref_types) < 2:
                         adata.obs.loc[adata.obs[j] == "Random", j] = ref_type
@@ -843,11 +859,12 @@ def run_scVI(adata, **kwargs):
     return model
 
 '''
-Wrapper for scANVI
+Wrapper for running scANVI
 Called from iterative_scANVI.
 
 Input arguements:
 adata: (AnnData) Merged AnnData object
+model: (SCVI) SCVI model
 **kwargs: (dict) Passed to several functions, details below:
 
     layer: (None or str, default None) None if unnormalized counts are in AnnData.X, else a str where they are stored in AnnData.layers
@@ -894,6 +911,82 @@ def run_scANVI(adata, model, **kwargs):
     )
     label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True)
     
+    adata.obs[labels_key + "_scANVI"] = label_model.predict()
+    adata.obs[labels_key + "_scANVI"] = adata.obs[labels_key + "_scANVI"].astype("category")
+
+    probabilities = label_model.predict(soft=True)
+
+    tmp = pd.concat([adata.obs, probabilities], axis=1)
+    for l in [m for m in tmp.columns if m.endswith("_y")]:
+        l = l.replace("_y", "")
+        tmp[l + "_x"] = tmp[l + "_x"].astype("object")
+        tmp[l + "_y"] = tmp[l + "_y"].astype("object")
+        tmp[l] = tmp[l + "_y"].fillna(tmp[l + "_x"])
+        tmp[l] = tmp[l].astype("category")
+        tmp = tmp.drop([l + "_y", l + "_x"], axis=1)
+
+    adata.obs = tmp.copy()
+
+    adata.obs[labels_key + "_conf_scANVI"] = 0
+    adata.obs[labels_key + "_conf_scANVI"] = adata.obs[labels_key + "_conf_scANVI"].astype("float")
+    adata.obs = adata.obs.copy()
+
+    for i in adata.obs[labels_key + "_scANVI"].cat.categories:
+        adata.obs[i] = adata.obs[i].astype("float")
+        adata.obs.loc[adata.obs[labels_key + "_scANVI"] == i, labels_key + "_conf_scANVI"] = adata.obs[adata.obs[labels_key + "_scANVI"] == i][i]
+    
+    to_pass = [labels_key + "_scANVI", labels_key + "_conf_scANVI"]
+    to_pass.extend(probabilities.columns)
+    probabilities = adata.obs.loc[:, to_pass]
+    
+    return (label_model, probabilities)
+
+'''
+Wrapper for querying scANVI
+Called from iterative_scANVI.
+
+Input arguements:
+adata: (AnnData) Merged AnnData object
+model_dir: (str) Patch for the scANVI model to query
+**kwargs: (dict) Passed to several functions, details below:
+
+    layer: (None or str, default None) None if unnormalized counts are in AnnData.X, else a str where they are stored in AnnData.layers
+    
+    categorical_covariate_keys: (list) List of categorical covariates to pass to scVI and scANVI (e.g. ["donor_name"])
+    
+    continuous_covariate_keys: (list) List of continuous covariates to pass to scVI and scANVI (e.g. ["n_genes"])
+    
+    max_epochs_scANVI: (int, default 20) Number of epochs to train scANVI
+    
+    scANVI_model_args: (None or dict) kwargs passed to scvi.model.SCANVI.from_scvi_model
+
+
+Outputs:
+Returns tupple with trained scANVI model and label predictions/probabilities (pd.DataFrame)
+'''
+                              
+def query_scANVI(adata, model_dir, **kwargs):
+    layer = kwargs["layer"]
+    max_epochs_scANVI = kwargs["max_epochs_scANVI"]
+    batch_key = kwargs["batch_key"]
+    categorical_covariate_keys = kwargs["categorical_covariate_keys"]
+    continuous_covariate_keys = kwargs["continuous_covariate_keys"]
+    labels_key = kwargs["labels_key"]
+    scANVI_model_args = kwargs["scANVI_model_args"]
+        
+    adata = adata.copy()
+    
+    scvi.model.SCANVI.setup_anndata(
+        adata,
+        layer=layer,
+        batch_key=batch_key,
+        categorical_covariate_keys=categorical_covariate_keys,
+        continuous_covariate_keys=continuous_covariate_keys,
+        labels_key=labels_key,
+        unlabeled_category="Unknown"
+    )
+    label_model = scvi.model.SCANVI.load(model_dir, adata)
+
     adata.obs[labels_key + "_scANVI"] = label_model.predict()
     adata.obs[labels_key + "_scANVI"] = adata.obs[labels_key + "_scANVI"].astype("category")
 
@@ -1110,11 +1203,11 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, d
             if normalize_data == True:
                 try:
                     rsc.get.anndata_to_GPU(sub)
-                    rsc.pp.normalize_total(sub, 1e4)
+                    rsc.pp.normalize_total(sub, 1e5)
                     rsc.pp.log1p(sub)
                     rsc.get.anndata_to_CPU(sub)
                 except:
-                    sc.pp.normalize_total(sub, 1e4)
+                    sc.pp.normalize_total(sub, 1e5)
                     sc.pp.log1p(sub)
 
             if calculate_umap == True:
