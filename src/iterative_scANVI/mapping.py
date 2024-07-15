@@ -600,7 +600,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                         adata.obs[j] = adata.obs[j].cat.add_categories(["Random"])
                         adata.obs.loc[random_ref_cell, j] = "Random"
 
-                    if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False
+                    if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False:
                         label_model, probabilities = run_scANVI(adata[cells, markers], model=model, **run_scANVI_kwargs)
                         label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
                         pd.DataFrame(markers).to_csv(
