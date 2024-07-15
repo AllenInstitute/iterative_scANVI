@@ -11,7 +11,6 @@ import pandas as pd
 import seaborn as sns
 import scanpy as sc
 import anndata as ad
-import rapids_singlecell as rsc
 from datetime import datetime
 from scipy import sparse as sp_sparse
 from scipy import stats as sp_stats
@@ -19,6 +18,11 @@ from matplotlib import pyplot as plt
 from joblib import parallel_backend
 from joblib import Parallel, delayed
 import warnings
+
+try:
+    import rapids_singlecell as rsc
+except:
+    warnings.warn("Unable to load rapids_singlecell, will fall back to scanpy as needed")
 
 warnings.filterwarnings("ignore")
 
@@ -396,6 +400,15 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                         arr=latent_space
                     )
                     del latent_space
+
+                ref_types = np.setdiff1d(adata.obs[j].unique(), "Unknown")
+                if len(ref_types) < 2:
+                    warnings.warn("Adding a random cell type category because only one reference cell type exists")
+                    ref_type = ref_types[0]
+                    ref_cells = adata.obs["Reference Cell"] == True
+                    random_ref_cell = random.sample(adata.obs_names[ref_cells].to_list(), k=3)
+                    adata.obs[j] = adata.obs[j].cat.add_categories(["Random"])
+                    adata.obs.loc[random_ref_cell, j] = "Random"
                 
                 if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False:
                     label_model, probabilities = run_scANVI(adata[:, markers], model=model, **run_scANVI_kwargs)
@@ -411,6 +424,14 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                         model_dir=os.path.join(output_dir, "scANVI_models", label_model_name),
                         **run_scANVI_kwargs
                     )
+
+                if len(ref_types) < 2:
+                    adata.obs.loc[adata.obs[j] == "Random", j] = ref_type
+                    probabilities.loc[probabilities[j + "_scANVI"] == "Random", j + "_scANVI"] = ref_type
+                    probabilities.loc[:, j + "_conf_scANVI"] = 1
+                    probabilities.loc[:, ref_type] = 1
+                    probabilities = probabilities.drop(["Random"], axis=1)
+                    adata.obs[j] = adata.obs[j].cat.remove_unused_categories()
 
                 probabilities.to_csv(os.path.join(output_dir, "scANVI_models", label_model_name, "probabilities.csv"))
                 
@@ -574,8 +595,8 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                     if len(ref_types) < 2:
                         warnings.warn("Adding a random cell type category because only one reference cell type exists")
                         ref_type = ref_types[0]
-                        ref_cells = adata_ref.obs[labels_keys[i - 1]] == k
-                        random_ref_cell = random.sample(adata_ref.obs_names[ref_cells].to_list(), k=3)
+                        ref_cells = (adata.obs[labels_keys[i - 1]] == k) & (adata.obs["Reference Cell"] == True)
+                        random_ref_cell = random.sample(adata.obs_names[ref_cells].to_list(), k=3)
                         adata.obs[j] = adata.obs[j].cat.add_categories(["Random"])
                         adata.obs.loc[random_ref_cell, j] = "Random"
 
