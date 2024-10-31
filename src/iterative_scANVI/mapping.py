@@ -163,6 +163,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
     plot_confusion = kwargs["plot_confusion"]
     plot_latent_space = kwargs["plot_latent_space"]
     add_vars_to_plot = kwargs["add_vars_to_plot"]
+    run_inference = kwargs["run_inference"]
 
     if skipchecks == False:
         if isinstance(adata_query, ad.AnnData) == False or isinstance(adata_ref, ad.AnnData) == False:
