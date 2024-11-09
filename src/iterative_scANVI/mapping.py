@@ -327,7 +327,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
         ref_vars = ref_vars + ["Reference Cell"]
 
     model_vars = []
-    for i in [categorical_covariate_keys, continuous_covariate_keys, batch_key]:
+    for i in [categorical_covariate_keys, batch_key]:
         if i != None:
             if isinstance(i, str) == True:
                 model_vars.append(i)
