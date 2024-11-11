@@ -334,7 +334,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
             else:
                 model_vars.extend(i)
 
-    keeper_cells = filter_cells(adata.obs_names adata.obs, model_vars, min_batch_count)
+    keeper_cells = filter_cells(adata.obs_names, adata.obs, model_vars, min_batch_count)
     if keeper_cells.shape[0] != adata.shape[0]:
         warnings.warn("Removed " + str(adata.shape[0] - keeper_cells.shape[0]) + " cells because they were part of a batch below the min_batch_count")
         adata = adata[keeper_cells, :].copy()
