@@ -565,6 +565,8 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                     cells = adata.obs_names.isin(keeper_cells)
                     warnings.warn("Removed " + str(adata[cells].shape[0] - keeper_cells.shape[0]) + " cells because they were part of a batch below the min_batch_count.")
 
+                print(adata.obs.loc[cells, batch_key].value_counts())
+
                 if any(cells) == False:
                     continue
                     
@@ -952,7 +954,12 @@ def run_scANVI(adata, model, **kwargs):
         adata=adata,
         **scANVI_model_args
     )
-    label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True)
+
+    try:
+        label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True)
+    except ValueError:
+        label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True, batch_size=127)
+
     
     adata.obs[labels_key + "_scANVI"] = label_model.predict()
     adata.obs[labels_key + "_scANVI"] = adata.obs[labels_key + "_scANVI"].astype("category")
