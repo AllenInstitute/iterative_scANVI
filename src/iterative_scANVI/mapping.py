@@ -138,8 +138,6 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
         "plot_latent_space": False,
         "add_vars_to_plot": None,
         "run_inference": False,
-        "min_batch_count": 10,
-
     }
     
     kwargs = {**default_kwargs, **kwargs}
@@ -165,7 +163,6 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
     plot_latent_space = kwargs["plot_latent_space"]
     add_vars_to_plot = kwargs["add_vars_to_plot"]
     run_inference = kwargs["run_inference"]
-    min_batch_count = kwargs["min_batch_count"]
 
     if skipchecks == False:
         if isinstance(adata_query, ad.AnnData) == False or isinstance(adata_ref, ad.AnnData) == False:
@@ -326,22 +323,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
 
         ref_vars = ref_vars + ["Reference Cell"]
 
-    model_vars = []
-    for i in [categorical_covariate_keys, batch_key]:
-        if i != None:
-            if isinstance(i, str) == True:
-                model_vars.append(i)
-            else:
-                model_vars.extend(i)
-
-    keeper_cells = filter_cells(adata.obs_names, adata.obs, model_vars, min_batch_count)
-    if keeper_cells.shape[0] != adata.shape[0]:
-        warnings.warn("Removed " + str(adata.shape[0] - keeper_cells.shape[0]) + " cells because they were part of a batch below the min_batch_count")
-        adata = adata[keeper_cells, :].copy()
-
-
-    print(str(datetime.now()) + " -- Finished creating merged and downsampled AnnData objects.") 
-    
+    print(str(datetime.now()) + " -- Finished creating merged and downsampled AnnData objects.")     
     
     for i,j in enumerate(labels_keys):
         get_model_genes_kwargs = {
@@ -559,14 +541,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                 label_model_name = hashlib.md5(str(json.dumps({**{labels_keys[i - 1]: k}, **get_model_genes_kwargs, **run_scANVI_kwargs})).replace("/", " ").encode()).hexdigest()
                 
                 cells = adata.obs[labels_keys[i - 1] + "_scANVI"] == k
-
-                keeper_cells = filter_cells(adata[cells].obs_names, adata[cells].obs, model_vars, min_batch_count)
-                if keeper_cells.shape[0] != adata[cells].shape[0]:
-                    cells = adata.obs_names.isin(keeper_cells)
-                    warnings.warn("Removed " + str(adata[cells].shape[0] - keeper_cells.shape[0]) + " cells because they were part of a batch below the min_batch_count.")
-
-                print(adata.obs.loc[cells, batch_key].value_counts())
-
+                
                 if any(cells) == False:
                     continue
                     
@@ -955,11 +930,7 @@ def run_scANVI(adata, model, **kwargs):
         **scANVI_model_args
     )
 
-    try:
-        label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True)
-    except ValueError:
-        label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True, batch_size=127)
-
+    label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True)
     
     adata.obs[labels_key + "_scANVI"] = label_model.predict()
     adata.obs[labels_key + "_scANVI"] = adata.obs[labels_key + "_scANVI"].astype("category")
@@ -1424,11 +1395,3 @@ def get_model_names(split_key, split_value, groupby, **kwargs):
         label_model_name = hashlib.md5(str(json.dumps({**{split_key: split_value}, **get_model_genes_kwargs, **run_scANVI_kwargs})).replace("/", " ").encode()).hexdigest()
         
     return (model_name, label_model_name)
-
-def filter_cells(cell_names, obs, group_columns, min_cells):
-    cells_to_keep = cell_names.copy()
-    for column in group_columns:
-        group_counts = obs[column].value_counts()
-        valid_groups = group_counts[group_counts >= min_cells].index
-        cells_to_keep = cells_to_keep.intersection(obs.index[obs[column].isin(valid_groups)])
-    return cells_to_keep
