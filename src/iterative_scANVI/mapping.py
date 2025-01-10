@@ -930,7 +930,10 @@ def run_scANVI(adata, model, **kwargs):
         **scANVI_model_args
     )
 
-    label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True)
+    try:
+        label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True)
+    except ValueError:
+        label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True, batch_size=127)
     
     adata.obs[labels_key + "_scANVI"] = label_model.predict()
     adata.obs[labels_key + "_scANVI"] = adata.obs[labels_key + "_scANVI"].astype("category")
