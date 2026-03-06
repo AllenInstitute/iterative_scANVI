@@ -874,7 +874,13 @@ def run_scVI(adata, **kwargs):
         continuous_covariate_keys=continuous_covariate_keys
     )
     model = scvi.model.SCVI(adata, **scVI_model_args)
-    model.train(max_epochs=max_epochs_scVI, early_stopping=True)
+    model.train(
+        max_epochs=max_epochs_scVI,
+        early_stopping=True,
+        accelerator="gpu",
+        devices=-1,
+        strategy="ddp_find_unused_parameters_true"
+    )
     
     return model
 
@@ -930,10 +936,14 @@ def run_scANVI(adata, model, **kwargs):
         **scANVI_model_args
     )
 
-    try:
-        label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True)
-    except ValueError:
-        label_model.train(max_epochs=max_epochs_scANVI, early_stopping=True, batch_size=127)
+    label_model.train(
+        max_epochs=max_epochs_scANVI,
+        early_stopping=True
+        accelerator="gpu",
+        devices=-1,
+        strategy="ddp_find_unused_parameters_true"
+    )
+
     
     adata.obs[labels_key + "_scANVI"] = label_model.predict()
     adata.obs[labels_key + "_scANVI"] = adata.obs[labels_key + "_scANVI"].astype("category")
