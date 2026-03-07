@@ -938,7 +938,7 @@ def run_scANVI(adata, model, **kwargs):
 
     label_model.train(
         max_epochs=max_epochs_scANVI,
-        early_stopping=True
+        early_stopping=True,
         accelerator="gpu",
         devices=-1,
         strategy="ddp_find_unused_parameters_true"
