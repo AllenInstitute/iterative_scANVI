@@ -778,7 +778,7 @@ def get_model_genes(adata_ref, **kwargs):
         else:
             adata_ref.layers["log_normalized"] = adata_ref.layers[layer].copy()
         
-        with parallel_backend('threading', n_jobs=n_cores):
+        with parallel_backend('threading', n_jobs=-1):
             sc.pp.normalize_total(adata_ref, target_sum=1e4, layer="log_normalized")
             sc.pp.log1p(adata_ref, layer="log_normalized")
     
@@ -1065,8 +1065,6 @@ date: (str) Datestamp on the iterative_scANVI results file in the output_dir
 model_args: (dict): Changes to made to scVI_model_args during training (e.g. {"n_top_genes": 5000})
 
 **kwargs: (dict) Passed to several functions, details below:
-
-    n_cores: (int, default 1) Number of CPU cores to use when constructing the nearest neighbor graph
     
     normalize_data: (bool, default False) Whether to log-normalize AnnData.X
     
@@ -1077,9 +1075,7 @@ Outputs:
 Writes AnnData objects to disk at output_dir/<split_key value>_scANVI.<date>.h5ad
 
 Example Usage:
-save_anndata_kwargs = {
-    **{"n_cores": 32}
-}
+save_anndata_kwargs = {}
 
 save_anndata(
     adata=adata,
@@ -1116,14 +1112,12 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, d
     model_args = {**default_model_args, **model_args}
 
     default_kwargs = {
-        "n_cores": 1,
         "normalize_data": False,
         "calculate_umap": True,
     }
     
     kwargs = {**default_kwargs, **kwargs}
     
-    n_cores = kwargs["n_cores"]
     normalize_data = kwargs["normalize_data"]
     calculate_umap = kwargs["calculate_umap"]
     
@@ -1228,9 +1222,9 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, d
             cells = adata.obs_names
             sub = adata
                     
-        with parallel_backend('threading', n_jobs=n_cores):
+        with parallel_backend('threading', n_jobs=-1):
             if normalize_data == True:
-                sc.pp.normalize_total(sub, 1e5)
+                sc.pp.normalize_total(sub, 1e4)
                 sc.pp.log1p(sub)
 
             if calculate_umap == True:
