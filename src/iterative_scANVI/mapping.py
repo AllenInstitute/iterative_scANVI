@@ -777,13 +777,8 @@ def get_model_genes(adata_ref, **kwargs):
             adata_ref.layers["log_normalized"] = adata_ref.X.copy()
         else:
             adata_ref.layers["log_normalized"] = adata_ref.layers[layer].copy()
-
-        try:
-            rsc.get.anndata_to_GPU(adata_ref, layer="log_normalized")
-            rsc.pp.normalize_total(adata_ref, target_sum=1e4, layer="log_normalized")
-            rsc.pp.log1p(adata_ref, layer="log_normalized")
-            rsc.get.anndata_to_CPU(adata_ref, layer="log_normalized")
-        except:
+        
+        with parallel_backend('threading', n_jobs=n_cores):
             sc.pp.normalize_total(adata_ref, target_sum=1e4, layer="log_normalized")
             sc.pp.log1p(adata_ref, layer="log_normalized")
     
@@ -1235,14 +1230,8 @@ def save_anndata(adata_query, adata_ref, split_key, groupby, output_dir, date, d
                     
         with parallel_backend('threading', n_jobs=n_cores):
             if normalize_data == True:
-                try:
-                    rsc.get.anndata_to_GPU(sub)
-                    rsc.pp.normalize_total(sub, 1e5)
-                    rsc.pp.log1p(sub)
-                    rsc.get.anndata_to_CPU(sub)
-                except:
-                    sc.pp.normalize_total(sub, 1e5)
-                    sc.pp.log1p(sub)
+                sc.pp.normalize_total(sub, 1e5)
+                sc.pp.log1p(sub)
 
             if calculate_umap == True:
                 model_name, label_model_name = get_model_names(model_split_key, i, groupby, **model_args)
