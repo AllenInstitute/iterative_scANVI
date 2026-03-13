@@ -374,7 +374,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                     else:
                         markers = user_genes[i]
                     model = run_scVI(adata[:, markers], **run_scVI_kwargs)
-                    model.save(os.path.join(output_dir, "scVI_models", model_name))
+                    model.save(os.path.join(output_dir, "scVI_models", model_name), overwrite=True)
                     pd.DataFrame(markers).to_csv(
                         os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"),
                         index=False,
@@ -410,7 +410,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                 
                 if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False:
                     label_model, probabilities = run_scANVI(adata[:, markers], model=model, **run_scANVI_kwargs)
-                    label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
+                    label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name), overwrite=True)
                     pd.DataFrame(markers).to_csv(
                         os.path.join(output_dir, "scANVI_models", label_model_name, "var_names.csv"),
                         index=False,
@@ -565,7 +565,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
                                 markers = user_genes[i]
 
                         model = run_scVI(adata[cells, markers], **run_scVI_kwargs)
-                        model.save(os.path.join(output_dir, "scVI_models", model_name))
+                        model.save(os.path.join(output_dir, "scVI_models", model_name), overwrite=True)
                         pd.DataFrame(markers).to_csv(
                             os.path.join(output_dir, "scVI_models", model_name, "var_names.csv"),
                             index=False,
@@ -601,7 +601,7 @@ def iteratively_map(adata_query, adata_ref, labels_keys, output_dir, skipchecks=
 
                     if os.path.exists(os.path.join(output_dir, "scANVI_models", label_model_name)) == False:
                         label_model, probabilities = run_scANVI(adata[cells, markers], model=model, **run_scANVI_kwargs)
-                        label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name))
+                        label_model.save(os.path.join(output_dir, "scANVI_models", label_model_name), overwrite=True)
                         pd.DataFrame(markers).to_csv(
                             os.path.join(output_dir, "scANVI_models", label_model_name, "var_names.csv"),
                             index=False,
